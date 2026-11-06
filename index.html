@@ -121,6 +121,12 @@ dialog { border: 0; border-radius: 20px; padding: 0; max-width: 480px; width: 92
 .conv .del { background: transparent; color: #999; padding: 2px 8px; }
 .conv .del:hover { color: #c0392b; }
 #scrim { position: fixed; inset: 0; background: rgba(0,0,0,.3); z-index: 39; }
+.side-sec { display: flex; justify-content: space-between; align-items: center; font-weight: 600; padding: 0 4px; margin-top: 6px; }
+.side-sec button { padding: 4px 10px; }
+#projectList { display: flex; flex-direction: column; gap: 4px; }
+.conv .edit { background: transparent; color: #999; padding: 2px 8px; }
+#projInstr { width: 100%; min-height: 180px; resize: vertical; line-height: 1.6; }
+.danger { color: #c0392b !important; border-color: #e5b4b4 !important; }
 @media (min-width: 1024px) {
   body { padding-left: 300px; }
   #sidebar { transform: none; width: 300px; }
@@ -136,8 +142,11 @@ dialog { border: 0; border-radius: 20px; padding: 0; max-width: 480px; width: 92
 </header>
 
 <aside id="sidebar" aria-label="会話リスト">
-  <div class="side-head"><span>会話リスト</span><button id="sideCloseBtn" class="ghost" type="button">✕</button></div>
+  <div class="side-head"><span>メニュー</span><button id="sideCloseBtn" class="ghost" type="button">✕</button></div>
   <button id="newChatBtn" type="button">＋ 新しいチャット</button>
+  <div class="side-sec"><span>プロジェクト</span><button id="newProjectBtn" class="ghost" type="button">＋ 追加</button></div>
+  <div id="projectList"></div>
+  <div class="side-sec"><span id="convHead">会話</span></div>
   <div id="convList"></div>
   <p class="hint">会話はこの端末内に保存されます。別の端末へは設定の「書き出す／読み込む」で移せます。</p>
 </aside>
@@ -175,6 +184,7 @@ dialog { border: 0; border-radius: 20px; padding: 0; max-width: 480px; width: 92
   APIキーが未設定です。「⚙️ 設定」から Logfare のキーを1回入れるだけで使えます（キーはこの端末内にだけ保存されます）。
 </p>
 <p id="autoNotice" class="notice" hidden></p>
+<p id="projBar" class="notice" hidden style="background:#eef2f7;border-color:#cfdce8"></p>
 
 <main id="thread" aria-live="polite"></main>
 
@@ -213,6 +223,26 @@ dialog { border: 0; border-radius: 20px; padding: 0; max-width: 480px; width: 92
       <button id="saveSettings" type="button">保存</button>
       <button value="cancel" type="submit" class="ghost">閉じる</button>
     </div>
+  </form>
+</dialog>
+
+<dialog id="projectDlg">
+  <form method="dialog" class="settings-box">
+    <h3 style="margin:0">プロジェクト設定</h3>
+    <label>プロジェクト名
+      <input id="projName" type="text" placeholder="例：化粧品成分分析">
+    </label>
+    <label>指示（このプロジェクトの会話すべてに自動で適用されます）
+      <textarea id="projInstr" placeholder="例：化粧品の全成分を分析し、役割ごとに分類して表で示してください。根拠のない効能は断定しないでください。"></textarea>
+    </label>
+    <div class="row" style="justify-content:space-between">
+      <button id="projDelete" type="button" class="ghost danger">プロジェクトを削除</button>
+      <span style="display:flex;gap:8px">
+        <button id="projSave" type="button">保存</button>
+        <button id="projClose" type="button" class="ghost">閉じる</button>
+      </span>
+    </div>
+    <p class="hint">削除しても、そのプロジェクトの会話は消えません（プロジェクトなしの会話になります）。</p>
   </form>
 </dialog>
 
@@ -259,6 +289,8 @@ let state = {
   autoUpgrade: true,
   routeChoice: "auto",
   convs: null,
+  projects: [],
+  projectFilter: "all",
   modelChoice: { chat: "logfare/auto", app: "logfare/auto", image: "flux-2-dev" },
   ui: { chat: [], app: [], image: [] },
   history: { chat: [], app: [] },
@@ -350,6 +382,10 @@ function switchThread(id) {
 function renderSidebar() {
   const listEl = $("convList");
   if (!listEl) return;
+  renderProjects();
+  const pr = state.projectFilter && state.projectFilter !== "all" && state.projectFilter !== "none"
+    ? projectById(state.projectFilter) : null;
+  $("convHead").textContent = "会話" + (pr ? "（" + pr.name + "）" : state.projectFilter === "none" ? "（プロジェクトなし）" : "");
   listEl.textContent = "";
   $("newChatBtn").disabled = state.mode === "image";
   if (state.mode === "image") {
@@ -360,7 +396,7 @@ function renderSidebar() {
     return;
   }
   const c = state.convs[state.mode];
-  const items = [...c.list].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  const items = threadsForFilter([...c.list], state.projectFilter).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
   for (const t of items) {
     const row = document.createElement("div");
     row.className = "conv" + (t.id === c.activeId ? " active" : "");
@@ -423,6 +459,94 @@ function openSidebar() {
 function closeSidebar() {
   $("sidebar").classList.remove("open");
   $("scrim").hidden = true;
+}
+
+/* ---------- プロジェクト（GPT/Claude風） ----------
+   プロジェクトは「名前＋指示」を持ち、会話（スレッド）が所属する。
+   所属する会話では、送信のたびに指示が自動でシステムプロンプトに足される。 */
+let editingProjectId = null;
+function migrateProjects(st) {
+  if (!Array.isArray(st.projects)) st.projects = [];
+  if (!st.projectFilter) st.projectFilter = "all";
+  for (const m of ["chat", "app"]) {
+    const c = st.convs && st.convs[m];
+    if (c) for (const t of c.list) if (t.projectId === undefined) t.projectId = null;
+  }
+  return st;
+}
+function projectById(id) {
+  return state.projects.find((p) => p.id === id) || null;
+}
+function activeThreadProject() {
+  const t = activeThread();
+  return t && t.projectId ? projectById(t.projectId) : null;
+}
+function buildSystemContent(mode) {
+  let sys = SYSTEM_PROMPTS[mode];
+  const pr = activeThreadProject();
+  if (pr && (pr.instructions || "").trim()) {
+    sys += "\n\n# プロジェクト「" + pr.name + "」の指示\n" + pr.instructions.trim();
+  }
+  return sys;
+}
+function threadsForFilter(list, filter) {
+  if (filter === "all") return list;
+  if (filter === "none") return list.filter((t) => !t.projectId);
+  return list.filter((t) => t.projectId === filter);
+}
+function renderProjects() {
+  const el = $("projectList");
+  if (!el) return;
+  el.textContent = "";
+  const mkRow = (label, filter) => {
+    const row = document.createElement("div");
+    row.className = "conv" + (state.projectFilter === filter ? " active" : "");
+    const s = document.createElement("span");
+    s.className = "t";
+    s.textContent = label;
+    row.appendChild(s);
+    row.addEventListener("click", () => {
+      state.projectFilter = filter;
+      save();
+      renderSidebar();
+    });
+    el.appendChild(row);
+    return row;
+  };
+  mkRow("📁 すべての会話", "all");
+  for (const p of state.projects) {
+    const row = mkRow("📁 " + p.name, p.id);
+    const ed = document.createElement("button");
+    ed.type = "button";
+    ed.className = "edit";
+    ed.textContent = "✎";
+    ed.title = "プロジェクト設定（名前と指示）";
+    ed.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      openProjectDialog(p.id);
+    });
+    row.appendChild(ed);
+  }
+  mkRow("プロジェクトなし", "none");
+}
+function openProjectDialog(id) {
+  editingProjectId = id || null;
+  const p = id ? projectById(id) : null;
+  $("projName").value = p ? p.name : "";
+  $("projInstr").value = p ? p.instructions || "" : "";
+  $("projDelete").style.display = p ? "" : "none";
+  $("projectDlg").showModal();
+}
+function updateProjBar() {
+  const bar = $("projBar");
+  const pr = activeThreadProject();
+  if (pr) {
+    bar.hidden = false;
+    bar.textContent = "📁 プロジェクト「" + pr.name + "」の会話です" +
+      ((pr.instructions || "").trim() ? "（指示を自動で適用しています）" : "（指示は未設定です）");
+  } else {
+    bar.hidden = true;
+  }
 }
 
 /* ---------- データの書き出し／読み込み（端末間の移動用） ----------
@@ -588,6 +712,7 @@ function drawItem(item) {
 }
 
 function renderThread() {
+  updateProjBar();
   thread.textContent = "";
   for (const item of state.ui[state.mode]) drawItem(item);
   if (state.ui[state.mode].length === 0) {
@@ -806,7 +931,7 @@ async function sendChat(text) {
   const mode = state.mode;
   state.history[mode].push({ role: "user", content: text });
   const messages = [
-    { role: "system", content: SYSTEM_PROMPTS[mode] },
+    { role: "system", content: buildSystemContent(mode) },
     ...state.history[mode],
   ];
   const item = { who: "assistant", text: "", imgUrl: null };
@@ -1082,11 +1207,13 @@ $("importFile").addEventListener("change", async () => {
     state = Object.assign(
       { mode: "chat", autoUpgrade: true, routeChoice: "auto",
         modelChoice: { chat: "logfare/auto", app: "logfare/auto", image: "flux-2-dev" },
-        ui: { chat: [], app: [], image: [] }, history: { chat: [], app: [] } },
+        ui: { chat: [], app: [], image: [] }, history: { chat: [], app: [] },
+        projects: [], projectFilter: "all" },
       imported
     );
     state.apiKey = keepKey;
     migrateConvs(state);
+    migrateProjects(state);
     linkActiveThreads();
     save();
     routeSelect.value = state.routeChoice || "auto";
@@ -1112,6 +1239,7 @@ $("newChatBtn").addEventListener("click", () => {
   const t = {
     id: genThreadId(), title: "新しいチャット",
     createdAt: Date.now(), updatedAt: Date.now(), ui: [], history: [],
+    projectId: state.projectFilter !== "all" && state.projectFilter !== "none" ? state.projectFilter : null,
   };
   state.convs[state.mode].list.unshift(t);
   switchThread(t.id);
@@ -1119,8 +1247,41 @@ $("newChatBtn").addEventListener("click", () => {
   input.focus();
 });
 
+$("newProjectBtn").addEventListener("click", () => openProjectDialog(null));
+$("projClose").addEventListener("click", () => $("projectDlg").close());
+$("projSave").addEventListener("click", () => {
+  const name = $("projName").value.trim() || "無題のプロジェクト";
+  const instructions = $("projInstr").value;
+  if (editingProjectId) {
+    const p = projectById(editingProjectId);
+    if (p) { p.name = name; p.instructions = instructions; }
+  } else {
+    const p = { id: genThreadId(), name, instructions, createdAt: Date.now() };
+    state.projects.push(p);
+    state.projectFilter = p.id;
+  }
+  save();
+  renderSidebar();
+  $("projectDlg").close();
+});
+$("projDelete").addEventListener("click", () => {
+  const p = editingProjectId ? projectById(editingProjectId) : null;
+  if (!p) return;
+  if (!confirm("プロジェクト「" + p.name + "」を削除しますか？会話は消えず、プロジェクトなしになります。")) return;
+  state.projects = state.projects.filter((x) => x.id !== p.id);
+  for (const m of ["chat", "app"]) {
+    for (const t of state.convs[m].list) if (t.projectId === p.id) t.projectId = null;
+  }
+  if (state.projectFilter === p.id) state.projectFilter = "all";
+  save();
+  renderSidebar();
+  updateProjBar();
+  $("projectDlg").close();
+});
+
 /* ---------- 起動 ---------- */
 migrateConvs(state);
+migrateProjects(state);
 linkActiveThreads();
 if (state.mode !== "chat") {
   document.querySelectorAll(".mode").forEach((b) =>
