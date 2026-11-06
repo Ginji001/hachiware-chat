@@ -1,6 +1,7 @@
 /* ハチワレ チャット Service Worker
    役割はアプリ本体（同一オリジンのファイル）のキャッシュだけ。
    Logfare APIなど他オリジンへの通信には一切触らない。 */
+/* ビルド確認: 2026-11-06 写真アイコン版 */
 const CACHE = "hachiware-chat-v4";
 const SHELL = ["./", "./index.html", "./manifest.webmanifest", "./icon-512.png", "./icon-180.png"];
 
