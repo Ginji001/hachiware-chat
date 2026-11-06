@@ -1,0 +1,828 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#4a7c59">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="ハチワレ チャット">
+<title>ハチワレ チャット（Logfare）</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 100 100%27><text y=%27.9em%27 font-size=%2790%27>🐱</text></svg>">
+<style>
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0; display: flex; flex-direction: column;
+  font-family: "Hiragino Maru Gothic ProN", "Hiragino Sans", "Noto Sans JP", sans-serif;
+  background: #f6f3ec; color: #2f2f2f;
+}
+header {
+  display: flex; justify-content: space-between; align-items: center;
+  background: #4a7c59; color: #fff; padding: 10px 14px;
+}
+.brand { font-weight: 700; }
+button {
+  font: inherit; cursor: pointer; border: 0; border-radius: 999px;
+  background: #4a7c59; color: #fff; padding: 9px 16px;
+}
+button.ghost { background: transparent; color: inherit; border: 1px solid #c9c2b2; color: #555; }
+header button.ghost { color: #fff; border-color: rgba(255,255,255,.6); }
+.modes { display: flex; gap: 8px; padding: 10px 14px 0; }
+.modes .mode { background: #e7e2d4; color: #444; }
+.modes .mode.active { background: #4a7c59; color: #fff; }
+.modelbar {
+  display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+  padding: 10px 14px; font-size: .9rem;
+}
+select, input, textarea {
+  font: inherit; border: 1px solid #d8d2c4; border-radius: 10px; padding: 8px 10px; background: #fff;
+}
+.notice {
+  margin: 0 14px 8px; background: #fff3cd; border: 1px solid #ecd27a;
+  padding: 10px 12px; border-radius: 10px; font-size: .9rem;
+}
+main#thread {
+  flex: 1; overflow-y: auto; padding: 8px 14px 14px;
+  display: flex; flex-direction: column; gap: 10px;
+  max-width: 860px; width: 100%; margin: 0 auto;
+}
+.msg { max-width: 88%; padding: 10px 14px; border-radius: 16px; white-space: pre-wrap; word-break: break-word; line-height: 1.6; }
+.msg.user { align-self: flex-end; background: #dcebdd; border-bottom-right-radius: 4px; }
+.msg.assistant { align-self: flex-start; background: #fff; border-bottom-left-radius: 4px; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+.msg.error { align-self: flex-start; background: #fde8e8; border: 1px solid #e5a3a3; }
+.msg img.gen { max-width: 100%; border-radius: 12px; display: block; margin-top: 6px; }
+.msg pre {
+  background: #2f2f2f; color: #f2f2f2; padding: 12px; border-radius: 10px;
+  overflow-x: auto; white-space: pre; font-size: .82rem;
+}
+.msg .dl {
+  display: inline-block; margin: 6px 0; background: #4a7c59; color: #fff;
+  padding: 6px 12px; border-radius: 999px; font-size: .82rem; cursor: pointer; border: 0;
+}
+.msg code { background: #f0ece1; padding: 1px 5px; border-radius: 5px; }
+.msg pre code { background: transparent; padding: 0; }
+footer { border-top: 1px solid #e0dacb; background: #fff; padding: 10px 14px; }
+#composer { display: flex; gap: 8px; max-width: 860px; margin: 0 auto; }
+#composer textarea { flex: 1; resize: none; }
+.hint { color: #777; font-size: .8rem; max-width: 860px; margin: 8px auto 0; }
+dialog { border: 0; border-radius: 16px; padding: 0; max-width: 480px; width: 92%; }
+.settings-box { padding: 20px; display: grid; gap: 12px; }
+.settings-box input { width: 100%; }
+.settings-box .row { display: flex; gap: 8px; justify-content: flex-end; }
+.typing { opacity: .6; }
+
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">🐱 ハチワレ チャット</div>
+  <button id="settingsBtn" class="ghost" type="button">⚙️ 設定</button>
+</header>
+
+<nav class="modes" role="tablist">
+  <button data-mode="chat" class="mode active" type="button">💬 チャット</button>
+  <button data-mode="image" class="mode" type="button">🖼️ 画像</button>
+  <button data-mode="app" class="mode" type="button">📱 アプリ作成</button>
+</nav>
+
+<div class="modelbar">
+  <label>モデル <select id="modelSelect"></select></label>
+  <label>行き先
+    <select id="routeSelect">
+      <option value="auto">自動（振り分け）</option>
+      <option value="logfare">ハチワレで処理</option>
+      <option value="claude">Claude（仕上げ）へ</option>
+      <option value="dev">開発（OpenCode／ロク）へ</option>
+      <option value="roku">ロク（メール・Mac・調べもの）へ</option>
+    </select>
+  </label>
+  <label id="sizeWrap" hidden>サイズ
+    <select id="sizeSelect">
+      <option value="1024x1024">正方形 1024</option>
+      <option value="1024x576">横長 1024×576</option>
+      <option value="1280x670">note用 1280×670</option>
+      <option value="512x512">小さめ 512</option>
+    </select>
+  </label>
+  <button id="clearBtn" class="ghost" type="button">会話を消す</button>
+</div>
+
+<p id="keyNotice" class="notice" hidden>
+  APIキーが未設定です。「⚙️ 設定」から Logfare のキーを1回入れるだけで使えます（キーはこの端末内にだけ保存されます）。
+</p>
+<p id="autoNotice" class="notice" hidden></p>
+
+<main id="thread" aria-live="polite"></main>
+
+<footer>
+  <form id="composer">
+    <textarea id="input" rows="2" placeholder="メッセージを入力（Enterで送信、Shift+Enterで改行）"></textarea>
+    <button id="sendBtn" type="submit">送信</button>
+  </form>
+  <p class="hint" id="modeHint">チャット：ふつうの相談や文章作成に。モデルは Logfare Auto がおすすめです。</p>
+</footer>
+
+<dialog id="settings">
+  <form method="dialog" class="settings-box">
+    <h2>設定</h2>
+    <label>Logfare APIキー
+      <input id="apiKeyInput" type="password" autocomplete="off" placeholder="Logfareで発行されたキー">
+    </label>
+    <p class="hint"><button id="copyKeyBtn" type="button">📋 保存済みキーをコピー</button> <span id="copyKeyMsg"></span></p>
+    <p class="hint">
+      キーの取り方：<a href="https://logfare.ai/register" target="_blank" rel="noopener">logfare.ai/register</a>
+      でDiscord認証＋登録をすると発行されます。キーはこの端末のブラウザ内にだけ保存され、Logfare以外には送られません。
+    </p>
+    <label><input id="autoUpgradeInput" type="checkbox" checked style="width:auto"> モデルを自動で最新に切り替える（推奨・無料枠のみ）</label>
+    <p class="hint">ONのとき、開くたびにモデル一覧を取り直し、選んでいるモデルが消えた場合や同じ系列で新しい版が出た場合は自動で切り替えます。切り替えたときは画面上部に表示します。</p>
+    <p class="hint">⚠️ Logfareは送信内容がログ記録されるサービスです。個人情報や未公開の重要データは送らないでください。</p>
+    <div class="row">
+      <button id="saveSettings" type="button">保存</button>
+      <button value="cancel" type="submit" class="ghost">閉じる</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+// ハチワレ チャット（Logfare版）
+// - チャット / アプリ作成: POST https://logfare.ai/v1/chat/completions（ストリーミング）
+// - 画像: POST https://logfare.ai/v1/images/generations（FLUX系モデル）
+// - APIキーはこの端末の localStorage にだけ保存し、Logfare以外へは送りません。
+"use strict";
+
+const API = "https://logfare.ai/v1";
+const LS_KEY = "hachiware-chat-state-v1";
+
+const FALLBACK_MODELS = {
+  chat: [
+    { id: "logfare/auto", label: "Logfare Auto（おすすめ・自動選択）" },
+    { id: "gemma-4-26b", label: "Gemma 4 26B" },
+  ],
+  image: [
+    { id: "flux-2-dev", label: "FLUX.2 Dev（高画質）" },
+    { id: "flux-2-klein-9b", label: "FLUX.2 Klein 9B" },
+    { id: "flux-1-schnell", label: "FLUX.1 Schnell（速い）" },
+    { id: "sdxl-lightning", label: "SDXL Lightning（速い）" },
+  ],
+};
+
+const SYSTEM_PROMPTS = {
+  chat: "あなたは親切な日本語アシスタントです。簡潔で正確に答えてください。",
+  app:
+    "あなたはPWA開発アシスタントです。日本語で短く説明したあと、コピー＆ペーストでそのままブラウザで動く単一HTMLファイル全体（CSSとJavaScript込み）を、1つのコードブロックで出力してください。データ保存が必要ならlocalStorageを使ってください。",
+};
+
+const HINTS = {
+  chat: "チャット：ふつうの相談や文章作成に。行き先が「自動」のとき、開発・仕上げ・メールやMacの操作・最新情報の調べもの・秘密情報を含みそうな内容は、Logfareに送らず行き先を切り替えて引き継ぎ文を作ります。",
+  image: "画像：作りたい画像の説明を入力して送信してください。文字入りの画像は崩れやすいので、文字なしがおすすめです。",
+  app: "アプリ作成：作りたいPWAの内容を書くと、単一HTMLのコードが返ります。コード下の「ファイルとして保存」から保存して開けます。",
+};
+
+let models = structuredClone(FALLBACK_MODELS);
+let state = {
+  mode: "chat",
+  apiKey: "",
+  autoUpgrade: true,
+  routeChoice: "auto",
+  modelChoice: { chat: "logfare/auto", app: "logfare/auto", image: "flux-2-dev" },
+  ui: { chat: [], app: [], image: [] },
+  history: { chat: [], app: [] },
+};
+
+try {
+  const saved = JSON.parse(localStorage.getItem(LS_KEY) || "null");
+  if (saved && saved.ui && saved.history) state = Object.assign(state, saved);
+} catch (_) { /* 初回は既定値 */ }
+
+const $ = (id) => document.getElementById(id);
+const thread = $("thread");
+const input = $("input");
+const modelSelect = $("modelSelect");
+const routeSelect = $("routeSelect");
+const sizeWrap = $("sizeWrap");
+const sizeSelect = $("sizeSelect");
+
+function save() {
+  try {
+    const copy = structuredClone(state);
+    for (const m of ["chat", "app", "image"]) {
+      copy.ui[m] = copy.ui[m].map((it) =>
+        it.imgUrl && it.imgUrl.startsWith("data:") && it.imgUrl.length > 200000
+          ? { ...it, imgUrl: null, text: (it.text || "") + "\n（画像は端末に保存されませんでした）" }
+          : it
+      );
+    }
+    localStorage.setItem(LS_KEY, JSON.stringify(copy));
+  } catch (_) { /* 容量超過時は保存を諦める */ }
+}
+
+function getKey() {
+  return (state.apiKey || "").trim();
+}
+
+function updateKeyNotice() {
+  $("keyNotice").hidden = !!getKey();
+}
+
+/* ---------- 描画（XSS対策として textContent ベースで組み立てる） ---------- */
+function renderRich(container, text) {
+  container.textContent = "";
+  const parts = String(text || "").split(/```(\w*)\n?/);
+  // parts: [text, lang, code, text, lang, code, ...] の繰り返しになる
+  for (let i = 0; i < parts.length; i++) {
+    if (i % 3 === 2) {
+      const code = parts[i];
+      const pre = document.createElement("pre");
+      const codeEl = document.createElement("code");
+      codeEl.textContent = code;
+      pre.appendChild(codeEl);
+      container.appendChild(pre);
+      const dl = document.createElement("button");
+      dl.type = "button";
+      dl.className = "dl";
+      dl.textContent = "⬇ このコードをファイルとして保存";
+      dl.addEventListener("click", () => downloadCode(code));
+      container.appendChild(dl);
+    } else if (i % 3 === 0) {
+      const span = document.createElement("span");
+      span.textContent = parts[i];
+      container.appendChild(span);
+    }
+  }
+}
+
+function downloadCode(code) {
+  const isHtml = /<\s*html/i.test(code);
+  const name = isHtml ? "index.html" : "code.txt";
+  const blob = new Blob([code], { type: "text/plain;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+
+function addItem(who, text, imgUrl) {
+  const item = { who, text: text || "", imgUrl: imgUrl || null };
+  state.ui[state.mode].push(item);
+  drawItem(item);
+  save();
+  return item;
+}
+
+function drawItem(item) {
+  const div = document.createElement("div");
+  div.className = "msg " + (item.who === "user" ? "user" : item.who === "error" ? "error" : "assistant");
+  const body = document.createElement("div");
+  renderRich(body, item.text);
+  div.appendChild(body);
+  if (item.imgUrl) {
+    const img = document.createElement("img");
+    img.className = "gen";
+    img.src = item.imgUrl;
+    img.alt = "生成された画像";
+    div.appendChild(img);
+    const a = document.createElement("a");
+    a.href = item.imgUrl;
+    a.download = "image.jpg";
+    a.target = "_blank";
+    a.rel = "noopener";
+    a.textContent = "画像を開く／保存";
+    div.appendChild(a);
+  }
+  if (item.handoff) {
+    const ho = item.handoff;
+    const mkBtn = (label, fn) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "dl";
+      b.textContent = label;
+      b.addEventListener("click", fn);
+      div.appendChild(b);
+    };
+    mkBtn("📋 引き継ぎ文をコピー", async () => {
+      let ok = false;
+      try { await navigator.clipboard.writeText(ho.text); ok = true; } catch (_) {
+        const ta = document.createElement("textarea");
+        ta.value = ho.text;
+        document.body.appendChild(ta);
+        ta.select();
+        try { ok = document.execCommand("copy"); } catch (_) { /* noop */ }
+        ta.remove();
+      }
+      alert(ok ? "コピーしました。行き先に貼ってください。" : "コピーに失敗しました。下の「ファイルとして保存」を使ってください。");
+    });
+    mkBtn("⬇ 引き継ぎ文をファイルとして保存", () => {
+      const blob = new Blob([ho.text], { type: "text/markdown;charset=utf-8" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = ho.filename || "handoff.md";
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    });
+    if (ho.route === "claude") {
+      const a = document.createElement("a");
+      a.className = "dl";
+      a.style.textDecoration = "none";
+      a.textContent = "↗ Claudeを開く（引き継ぎ文が入力済み）";
+      a.href = "https://claude.ai/new?q=" + encodeURIComponent(ho.text.slice(0, 6000));
+      a.target = "_blank";
+      a.rel = "noopener";
+      div.appendChild(a);
+    }
+    if (ho.route === "dev") {
+      const note = document.createElement("div");
+      note.textContent = "使い方：ロクに送る場合はコピーしてそのまま貼ってください。OpenCodeで使う場合は、保存したファイルをプロジェクトで開いて内容を貼ってください。";
+      div.appendChild(note);
+    }
+  }
+  thread.appendChild(div);
+  thread.scrollTop = thread.scrollHeight;
+  return { div, body };
+}
+
+function renderThread() {
+  thread.textContent = "";
+  for (const item of state.ui[state.mode]) drawItem(item);
+  if (state.ui[state.mode].length === 0) {
+    const d = document.createElement("div");
+    d.className = "msg assistant";
+    d.textContent =
+      state.mode === "image"
+        ? "作りたい画像の説明を下に入力してください。例：白黒ハチワレ猫の可愛いイラスト、フラットデザイン、文字なし"
+        : state.mode === "app"
+          ? "作りたいアプリを教えてください。例：スキンケアの使用記録ができるPWA、データは端末内保存"
+          : "こんにちは。聞きたいことを下に入力してください。";
+    thread.appendChild(d);
+  }
+}
+
+/* ---------- モデル一覧（キー不要で取得できる /v1/models を使用） ---------- */
+async function loadModels() {
+  try {
+    const headers = {};
+    const k = getKey();
+    if (k) headers.Authorization = "Bearer " + k; // キー付きだと解放済みモデルも一覧に載る
+    const res = await fetch(API + "/models", { headers });
+    if (!res.ok) return;
+    const data = (await res.json()).data || [];
+    const toLabel = (m) => ({
+      id: m.id,
+      label:
+        (m.display_name || m.id) +
+        (m.requires_training_optin
+          ? m.premium_unlocked
+            ? "（解放済み）"
+            : "（要オプトイン）"
+          : ""),
+    });
+    const chat = data
+      .filter((m) => (m.endpoints || []).includes("chat/completions"))
+      .map(toLabel);
+    const image = data
+      .filter((m) => (m.endpoints || []).includes("images/generations"))
+      .map(toLabel);
+    if (chat.length) {
+      chat.sort((a, b) => (a.id === "logfare/auto" ? -1 : b.id === "logfare/auto" ? 1 : 0));
+      models.chat = chat;
+    }
+    if (image.length) models.image = image;
+  } catch (_) { /* 取得できなければ同梱の既定値を使う */ }
+  autoUpgradeModels();
+  fillModelSelect();
+}
+
+/* ---------- 自動切り替え（無料枠のみ・同じ系列の新しい版へ） ---------- */
+function modelFamilyVersion(id) {
+  const m = String(id).toLowerCase().match(/^([a-z]+)[^0-9]*(\d+)?(?:\.(\d+))?/);
+  if (!m) return { family: String(id), major: 0, minor: 0 };
+  return { family: m[1], major: Number(m[2] || 0), minor: Number(m[3] || 0) };
+}
+function autoUpgradeModels() {
+  if (state.autoUpgrade === false) return;
+  const notices = [];
+  const apply = (modeKey, list, fallbackId) => {
+    if (!list || !list.length) return;
+    const cur = state.modelChoice[modeKey];
+    const found = list.find((m) => m.id === cur);
+    if (!found) {
+      const next = list.find((m) => m.id === fallbackId) || list[0];
+      if (next && next.id !== cur) {
+        notices.push("「" + cur + "」は一覧から消えたため「" + next.id + "」に切り替えました");
+        state.modelChoice[modeKey] = next.id;
+      }
+      return;
+    }
+    if (cur === "logfare/auto") return; // サーバー側ルーターは常に最新へ振り分けるので対象外
+    const curV = modelFamilyVersion(cur);
+    const newer = list
+      .filter((m) => {
+        const v = modelFamilyVersion(m.id);
+        return v.family === curV.family &&
+          (v.major > curV.major || (v.major === curV.major && v.minor > curV.minor));
+      })
+      .sort((a, b) => {
+        const va = modelFamilyVersion(a.id), vb = modelFamilyVersion(b.id);
+        return vb.major - va.major || vb.minor - va.minor;
+      })[0];
+    if (newer) {
+      notices.push("新しい版が出たため「" + cur + "」→「" + newer.id + "」に切り替えました");
+      state.modelChoice[modeKey] = newer.id;
+    }
+  };
+  apply("chat", models.chat, "logfare/auto");
+  apply("app", models.chat, "logfare/auto");
+  apply("image", models.image, "flux-2-dev");
+  if (notices.length) {
+    const el = $("autoNotice");
+    el.textContent = "🔄 モデルを自動で切り替えました：" + notices.join("／");
+    el.hidden = false;
+    save();
+  }
+}
+
+function fillModelSelect() {
+  const list = state.mode === "image" ? models.image : models.chat;
+  modelSelect.textContent = "";
+  for (const m of list) {
+    const opt = document.createElement("option");
+    opt.value = m.id;
+    opt.textContent = m.label;
+    modelSelect.appendChild(opt);
+  }
+  const want = state.modelChoice[state.mode];
+  if (list.some((m) => m.id === want)) modelSelect.value = want;
+  sizeWrap.hidden = state.mode !== "image";
+  $("modeHint").textContent = HINTS[state.mode];
+  input.placeholder =
+    state.mode === "image"
+      ? "作りたい画像の説明を入力して送信"
+      : state.mode === "app"
+        ? "作りたいアプリの内容を入力して送信"
+        : "メッセージを入力（Enterで送信、Shift+Enterで改行）";
+}
+
+/* ---------- 行き先の振り分け（ルーター） ----------
+   この画面（単一HTML）から外部の道具を直接動かすことはできないため、
+   振り分け先が Logfare 以外のときは送信を止め、行き先別の「引き継ぎ文」を作る。
+   Claude は ?q= で入力済みの状態で開ける（送信は本人が Enter）。
+   判定はこの端末内だけで行い、判定のために外部へ送ることはない。 */
+function detectRoute(text) {
+  const rules = [
+    { route: "roku", kind: "secret", patterns: [
+      /パスワード/, /APIキー/i, /秘密鍵/, /個人情報/, /クレジットカード/, /口座番号/, /マイナンバー/,
+      /非公開の/, /全ソース/, /ソース全文/, /製品データ/, /sk-[A-Za-z0-9]{8,}/, /Bearer\s+\S+/,
+    ], label: "秘密情報を含む可能性" },
+    { route: "roku", kind: "action", patterns: [
+      /メールを(送|確認|読|返信|チェック)/, /メールが(来|届)/, /Gmail/i,
+      /カレンダーに(入|登録|追加)/, /予定を(入|登録|追加|確認)/, /リマインダー/,
+      /Macを(操作|再起動)/, /Macの(画面|ファイル|容量)/, /ファイルを(削除|整理|移動)して/,
+      /最新の(情報|ニュース|モデル|料金)/, /ニュースを(調べ|確認)/, /公式(サイト|情報)を(調べ|確認)/,
+      /料金を調べ/, /価格を調べ/, /予約(を|して)/, /申し込んで/,
+    ], label: "メール／カレンダー／Mac操作／最新情報の確認が必要" },
+    { route: "dev", kind: "dev", patterns: [
+      /npm/, /テストを(実行|回)/, /テスト実行/, /ビルド(して|を実行)/, /ファイルを(直|編集|修正)して/,
+      /実装して/, /バグを(直|修正)/, /リファクタ/, /コミットして/, /デプロイして/, /エラーを直して/,
+    ], label: "ファイルの直接編集やテスト実行が必要" },
+    { route: "claude", kind: "finish", patterns: [
+      /仕上げ(て|の)/, /最終確認/, /最終判断/, /推敲/, /校正して/, /厳密に/, /設計を(決め|判断)/, /設計レビュー/,
+    ], label: "仕上げ・最終判断の依頼" },
+  ];
+  for (const rule of rules) {
+    for (const p of rule.patterns) {
+      const m = text.match(p);
+      if (m) return { route: rule.route, kind: rule.kind, reason: rule.label + "（「" + m[0] + "」）" };
+    }
+  }
+  return { route: "logfare", kind: "chat", reason: "" };
+}
+
+function buildHandoff(route, kind, reason, text) {
+  const stamp = new Date().toLocaleString("ja-JP");
+  if (route === "claude") {
+    return {
+      filename: "claude-handoff.md",
+      text:
+        "# Claudeへの仕上げ依頼\n\n次の素材について、厳密な設計判断と日本語の最終仕上げを行ってください。事実と推測を分け、根拠が弱い点は明示してください。量の下書きではなく、仕上げだけをお願いします。\n\n## 素材・依頼\n" + text + "\n",
+    };
+  }
+  if (route === "dev") {
+    return {
+      filename: "dev-handoff.md",
+      text:
+        "# 開発依頼（OpenCode＋Logfare／ロク）\n\n## やりたいこと\n" + text + "\n\n## 条件\n- 対象が Formula Bloom（処方の花）の場合は、プロジェクトの AGENTS.md と handoff のルールを守ること\n- 変更後は必ずテスト（npm run check）を実行し、結果を報告すること\n- 非公開のソース全文や製品データJSONを Logfare へ送らないこと（渡してよいのは安全なコンテキスト＋対象ファイル1つまで）\n- 破壊的な変更（削除・リセット等）は事前に承認を取ること\n",
+    };
+  }
+  // roku（メール・Mac・調べもの／秘密情報）
+  const warn = kind === "secret"
+    ? "⚠️ 秘密情報を含む可能性があるため、ハチワレチャット（Logfare）には送信していません。\n\n"
+    : "";
+  return {
+    filename: "roku-handoff.md",
+    text:
+      warn + "# ロクへの依頼\n\n" + text + "\n\n## 備考\n- ハチワレチャットから切り替えた依頼です（" + stamp + "）。理由：" + reason + "\n- メール／カレンダー／Mac操作／最新情報の確認が必要な場合は、接続済みの道具で実行してください\n",
+  };
+}
+
+const ROUTE_NAMES = {
+  claude: "Claude（仕上げ）",
+  dev: "開発（OpenCode＋Logfare／ロク）",
+  roku: "ロク（メール・カレンダー・Mac・調べもの）",
+};
+
+function doHandoff(route, kind, reason, originalText) {
+  const ho = buildHandoff(route, kind, reason, originalText);
+  const item = {
+    who: "assistant",
+    text:
+      "↪ 行き先を切り替えました：" + ROUTE_NAMES[route] + "\n理由：" + reason +
+      "\nLogfareには送信していません。下の引き継ぎ文をコピー（または保存）して、行き先で使ってください。\n\n--- 引き継ぎ文 ---\n" + ho.text,
+    imgUrl: null,
+    handoff: { route, text: ho.text, filename: ho.filename },
+  };
+  state.ui[state.mode].push(item);
+  drawItem(item);
+  save();
+}
+
+/* ---------- API呼び出し ---------- */
+function apiErrorMessage(status, serverMsg) {
+  if (status === 401) {
+    return (
+      "APIキーが違うか、LogfareのDiscord連携が未完了のようです。「⚙️ 設定」でキーを確認してください。\nLogfare側の表示: " +
+      (serverMsg || "")
+    );
+  }
+  return "エラー（" + status + "）: " + (serverMsg || "不明なエラー");
+}
+
+async function sendChat(text) {
+  const mode = state.mode;
+  state.history[mode].push({ role: "user", content: text });
+  const messages = [
+    { role: "system", content: SYSTEM_PROMPTS[mode] },
+    ...state.history[mode],
+  ];
+  const item = { who: "assistant", text: "", imgUrl: null };
+  state.ui[mode].push(item);
+  const { body } = drawItem(item);
+  body.parentElement.classList.add("typing");
+
+  try {
+    const res = await fetch(API + "/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer " + getKey(),
+      },
+      body: JSON.stringify({
+        model: state.modelChoice[mode],
+        messages,
+        stream: true,
+      }),
+    });
+    if (!res.ok) {
+      let msg = "";
+      try {
+        msg = (await res.json())?.error?.message || "";
+      } catch (_) { /* noop */ }
+      throw new Error(apiErrorMessage(res.status, msg));
+    }
+    const ct = res.headers.get("content-type") || "";
+    if (ct.includes("application/json")) {
+      const j = await res.json();
+      item.text = j?.choices?.[0]?.message?.content || j?.choices?.[0]?.message?.reasoning_content || "（空の応答でした）";
+    } else {
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+      let reasoning = "";
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop();
+        for (const line of lines) {
+          const t = line.trim();
+          if (!t.startsWith("data:")) continue;
+          const payload = t.slice(5).trim();
+          if (payload === "[DONE]") continue;
+          try {
+            const d = JSON.parse(payload)?.choices?.[0]?.delta || {};
+            if (d.content) {
+              item.text += d.content;
+              renderRich(body, item.text);
+              thread.scrollTop = thread.scrollHeight;
+            } else if (d.reasoning_content) {
+              reasoning += d.reasoning_content;
+              if (!item.text) {
+                renderRich(body, reasoning);
+                thread.scrollTop = thread.scrollHeight;
+              }
+            }
+          } catch (_) { /* 部分行は無視 */ }
+        }
+      }
+      if (!item.text) item.text = reasoning || "（空の応答でした）";
+    }
+    if (item.text && item.text !== "（空の応答でした）") {
+      state.history[mode].push({ role: "assistant", content: item.text });
+    }
+  } catch (e) {
+    item.who = "error";
+    item.text = e.message || String(e);
+    state.history[mode].pop(); // 失敗した発言は履歴から外す
+  } finally {
+    body.parentElement.classList.remove("typing");
+    body.parentElement.className = "msg " + (item.who === "error" ? "error" : "assistant");
+    renderRich(body, item.text);
+    save();
+  }
+}
+
+async function sendImage(prompt) {
+  const item = { who: "assistant", text: "生成中です…（30秒ほどかかることがあります）", imgUrl: null };
+  state.ui.image.push(item);
+  const { div, body } = drawItem(item);
+  div.classList.add("typing");
+  try {
+    const res = await fetch(API + "/images/generations", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer " + getKey(),
+      },
+      body: JSON.stringify({
+        model: state.modelChoice.image,
+        prompt,
+        size: sizeSelect.value,
+        n: 1,
+      }),
+    });
+    if (!res.ok) {
+      let msg = "";
+      try {
+        msg = (await res.json())?.error?.message || "";
+      } catch (_) { /* noop */ }
+      throw new Error(apiErrorMessage(res.status, msg));
+    }
+    const j = await res.json();
+    const d = j?.data?.[0] || {};
+    const url = d.url || (d.b64_json ? "data:image/png;base64," + d.b64_json : null);
+    if (!url) throw new Error("画像データが返りませんでした。別のモデルで試してください。");
+    item.text = prompt;
+    item.imgUrl = url;
+  } catch (e) {
+    item.who = "error";
+    item.text = e.message || String(e);
+  } finally {
+    div.classList.remove("typing");
+    div.className = "msg " + (item.who === "error" ? "error" : "assistant");
+    body.textContent = "";
+    renderRich(body, item.text);
+    if (item.imgUrl) {
+      const img = document.createElement("img");
+      img.className = "gen";
+      img.src = item.imgUrl;
+      img.alt = "生成された画像";
+      div.appendChild(img);
+      const a = document.createElement("a");
+      a.href = item.imgUrl;
+      a.download = "image.png";
+      a.target = "_blank";
+      a.rel = "noopener";
+      a.textContent = "画像を開く／保存";
+      div.appendChild(a);
+    }
+    save();
+  }
+}
+
+/* ---------- イベント ---------- */
+$("composer").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const text = input.value.trim();
+  if (!text) return;
+  // 行き先の振り分け（画像モードは常にLogfare。振り分け先へはAPIキー不要）
+  if (state.mode !== "image") {
+    let det;
+    if (state.routeChoice && state.routeChoice !== "auto") {
+      det = { route: state.routeChoice, kind: "manual", reason: "行き先を手動で選択" };
+    } else {
+      det = detectRoute(text);
+      // アプリ作成モードの試作はLogfareの仕事なので、開発・仕上げ判定はしない（秘密・操作系は振り分ける）
+      if (state.mode === "app" && (det.kind === "dev" || det.kind === "finish")) {
+        det = { route: "logfare", kind: "chat", reason: "" };
+      }
+    }
+    if (det.route !== "logfare") {
+      input.value = "";
+      addItem("user", text);
+      doHandoff(det.route, det.kind, det.reason, text);
+      input.focus();
+      return;
+    }
+  }
+  if (!getKey()) {
+    $("settings").showModal();
+    return;
+  }
+  input.value = "";
+  addItem("user", text);
+  $("sendBtn").disabled = true;
+  try {
+    if (state.mode === "image") await sendImage(text);
+    else await sendChat(text);
+  } finally {
+    $("sendBtn").disabled = false;
+    input.focus();
+  }
+});
+
+input.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+    e.preventDefault();
+    $("composer").requestSubmit();
+  }
+});
+
+document.querySelectorAll(".mode").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".mode").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    state.mode = btn.dataset.mode;
+    fillModelSelect();
+    renderThread();
+    save();
+  });
+});
+
+modelSelect.addEventListener("change", () => {
+  state.modelChoice[state.mode] = modelSelect.value;
+  save();
+});
+
+routeSelect.addEventListener("change", () => {
+  state.routeChoice = routeSelect.value;
+  save();
+});
+
+$("clearBtn").addEventListener("click", () => {
+  state.ui[state.mode] = [];
+  if (state.history[state.mode]) state.history[state.mode] = [];
+  renderThread();
+  save();
+});
+
+$("settingsBtn").addEventListener("click", () => {
+  $("apiKeyInput").value = state.apiKey || "";
+  $("autoUpgradeInput").checked = state.autoUpgrade !== false;
+  $("settings").showModal();
+});
+$("saveSettings").addEventListener("click", () => {
+  state.apiKey = $("apiKeyInput").value.trim();
+  state.autoUpgrade = $("autoUpgradeInput").checked;
+  save();
+  updateKeyNotice();
+  $("settings").close();
+  loadModels(); // キー保存後にモデル一覧を取り直す（解放済みの上位モデルを表示するため）
+});
+$("copyKeyBtn").addEventListener("click", async () => {
+  const key = $("apiKeyInput").value.trim();
+  const msg = $("copyKeyMsg");
+  if (!key) { msg.textContent = "キーが保存されていません"; return; }
+  try {
+    await navigator.clipboard.writeText(key);
+    msg.textContent = "コピーしました（" + key.length + "文字）";
+  } catch (e) {
+    const inp = $("apiKeyInput");
+    const orig = inp.type;
+    inp.type = "text";
+    inp.select();
+    let okCopy = false;
+    try { okCopy = document.execCommand("copy"); } catch (e2) {}
+    inp.type = orig;
+    msg.textContent = okCopy ? "コピーしました（" + key.length + "文字）" : "コピーに失敗しました";
+  }
+});
+
+/* ---------- 起動 ---------- */
+if (state.mode !== "chat") {
+  document.querySelectorAll(".mode").forEach((b) =>
+    b.classList.toggle("active", b.dataset.mode === state.mode)
+  );
+}
+updateKeyNotice();
+routeSelect.value = state.routeChoice || "auto";
+fillModelSelect();
+renderThread();
+loadModels();
+
+// 単体HTML版：Service Workerなし
+
+</script>
+</body>
+</html>
