@@ -1,7 +1,7 @@
 /* ハチワレ チャット Service Worker
    役割はアプリ本体（同一オリジンのファイル）のキャッシュだけ。
    Logfare APIなど他オリジンへの通信には一切触らない。 */
-const CACHE = "hachiware-chat-v2";
+const CACHE = "hachiware-chat-v3";
 const SHELL = ["./", "./index.html", "./manifest.webmanifest", "./icon-512.png", "./icon-180.png"];
 
 self.addEventListener("install", (e) => {
