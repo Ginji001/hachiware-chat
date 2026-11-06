@@ -9,7 +9,8 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="ハチワレ チャット">
 <title>ハチワレ チャット（Logfare）</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 100 100%27><text y=%27.9em%27 font-size=%2790%27>🐱</text></svg>">
+<link rel="icon" href="icon-512.png">
+<link rel="apple-touch-icon" href="icon-180.png">
 <style>
 * { box-sizing: border-box; }
 html, body { height: 100%; }
@@ -72,14 +73,43 @@ dialog { border: 0; border-radius: 16px; padding: 0; max-width: 480px; width: 92
 .settings-box input { width: 100%; }
 .settings-box .row { display: flex; gap: 8px; justify-content: flex-end; }
 .typing { opacity: .6; }
+.brand { display: flex; align-items: center; gap: 8px; }
+#brandIcon { width: 30px; height: 30px; border-radius: 50%; background: #f6f3ec; }
+#sideBtn { font-size: 1.1rem; padding: 6px 10px; }
+.row-wrap { display: flex; gap: 8px; align-items: flex-start; }
+.row-wrap .msg { flex: 1; }
+.avatar { width: 32px; height: 32px; border-radius: 50%; flex: none; margin-top: 2px; background: #f6f3ec; }
+#sidebar {
+  position: fixed; top: 0; left: 0; bottom: 0; width: min(300px, 85vw);
+  background: #fff; z-index: 40; transform: translateX(-105%); transition: transform .2s;
+  box-shadow: 2px 0 12px rgba(0,0,0,.15); display: flex; flex-direction: column; padding: 14px; gap: 10px;
+}
+#sidebar.open { transform: none; }
+#sidebar .side-head { display: flex; justify-content: space-between; align-items: center; font-weight: 700; }
+#convList { overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+.conv { padding: 10px 12px; border-radius: 10px; cursor: pointer; display: flex; gap: 8px; align-items: center; }
+.conv:hover { background: #f0ece1; }
+.conv.active { background: #dcebdd; }
+.conv .t { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conv .d { color: #888; font-size: .75rem; white-space: nowrap; }
+.conv .del { background: transparent; color: #999; padding: 2px 8px; }
+#scrim { position: fixed; inset: 0; background: rgba(0,0,0,.3); z-index: 39; }
 
 </style>
 </head>
 <body>
 <header>
-  <div class="brand">🐱 ハチワレ チャット</div>
+  <div class="brand"><button id="sideBtn" class="ghost" type="button" aria-label="会話リスト">☰</button><img id="brandIcon" src="icon-512.png" alt="">ハチワレ チャット</div>
   <button id="settingsBtn" class="ghost" type="button">⚙️ 設定</button>
 </header>
+
+<aside id="sidebar" aria-label="会話リスト">
+  <div class="side-head"><span>会話リスト</span><button id="sideCloseBtn" class="ghost" type="button">✕</button></div>
+  <button id="newChatBtn" type="button">＋ 新しいチャット</button>
+  <div id="convList"></div>
+  <p class="hint">会話はこの端末内に保存されます。別の端末へは設定の「書き出す／読み込む」で移せます。</p>
+</aside>
+<div id="scrim" hidden></div>
 
 <nav class="modes" role="tablist">
   <button data-mode="chat" class="mode active" type="button">💬 チャット</button>
@@ -163,6 +193,7 @@ dialog { border: 0; border-radius: 16px; padding: 0; max-width: 480px; width: 92
 
 const API = "https://logfare.ai/v1";
 const LS_KEY = "hachiware-chat-state-v1";
+const CAT_ICON = "icon-512.png";
 
 const FALLBACK_MODELS = {
   chat: [
@@ -195,6 +226,7 @@ let state = {
   apiKey: "",
   autoUpgrade: true,
   routeChoice: "auto",
+  convs: null,
   modelChoice: { chat: "logfare/auto", app: "logfare/auto", image: "flux-2-dev" },
   ui: { chat: [], app: [], image: [] },
   history: { chat: [], app: [] },
@@ -225,6 +257,140 @@ function save() {
     }
     localStorage.setItem(LS_KEY, JSON.stringify(copy));
   } catch (_) { /* 容量超過時は保存を諦める */ }
+}
+
+/* ---------- 会話リスト（サイドチャット風） ----------
+   state.ui[mode] / state.history[mode] は「今開いている会話」の置き場として従来どおり使い、
+   convs[mode].list に全会話を持つ。開いている会話は参照を共有させる（linkActiveThreads）。 */
+function genThreadId() {
+  return "c" + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36);
+}
+function migrateConvs(st) {
+  if (!st.convs || typeof st.convs !== "object") st.convs = {};
+  for (const m of ["chat", "app"]) {
+    const c = st.convs[m];
+    if (!c || !Array.isArray(c.list) || !c.list.length) {
+      const has = ((st.ui && st.ui[m]) || []).length > 0;
+      const t = {
+        id: genThreadId(), title: has ? "これまでの会話" : "新しいチャット",
+        createdAt: Date.now(), updatedAt: Date.now(),
+        ui: (st.ui && st.ui[m]) || [], history: (st.history && st.history[m]) || [],
+      };
+      st.convs[m] = { activeId: t.id, list: [t] };
+    }
+  }
+  return st;
+}
+function linkActiveThreads() {
+  for (const m of ["chat", "app"]) {
+    const c = state.convs[m];
+    const t = c.list.find((x) => x.id === c.activeId) || c.list[0];
+    c.activeId = t.id;
+    t.ui = state.ui[m];
+    t.history = state.history[m];
+  }
+}
+function activeThread() {
+  if (state.mode === "image" || !state.convs) return null;
+  const c = state.convs[state.mode];
+  return c ? c.list.find((x) => x.id === c.activeId) || null : null;
+}
+function touchThread(userText) {
+  const t = activeThread();
+  if (!t) return;
+  t.updatedAt = Date.now();
+  if (userText && t.title === "新しいチャット") {
+    t.title = String(userText).replace(/\s+/g, " ").slice(0, 24) || t.title;
+  }
+  renderSidebar();
+}
+function switchThread(id) {
+  const c = state.convs[state.mode];
+  const t = c.list.find((x) => x.id === id);
+  if (!t) return;
+  c.activeId = id;
+  state.ui[state.mode] = t.ui;
+  state.history[state.mode] = t.history;
+  save();
+  renderThread();
+  renderSidebar();
+}
+function renderSidebar() {
+  const listEl = $("convList");
+  if (!listEl) return;
+  listEl.textContent = "";
+  $("newChatBtn").disabled = state.mode === "image";
+  if (state.mode === "image") {
+    const d = document.createElement("div");
+    d.className = "hint";
+    d.textContent = "画像モードは1つの履歴です。会話リストはチャット／アプリ作成モードで使えます。";
+    listEl.appendChild(d);
+    return;
+  }
+  const c = state.convs[state.mode];
+  const items = [...c.list].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  for (const t of items) {
+    const row = document.createElement("div");
+    row.className = "conv" + (t.id === c.activeId ? " active" : "");
+    const title = document.createElement("span");
+    title.className = "t";
+    title.textContent = t.title || "新しいチャット";
+    const date = document.createElement("span");
+    date.className = "d";
+    const dt = new Date(t.updatedAt || t.createdAt || Date.now());
+    date.textContent = (dt.getMonth() + 1) + "/" + dt.getDate();
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "del";
+    del.textContent = "✕";
+    del.title = "この会話を削除";
+    del.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      deleteThread(t.id);
+    });
+    row.appendChild(title);
+    row.appendChild(date);
+    row.appendChild(del);
+    row.addEventListener("click", () => {
+      switchThread(t.id);
+      closeSidebar();
+    });
+    listEl.appendChild(row);
+  }
+}
+function deleteThread(id) {
+  const c = state.convs[state.mode];
+  const t = c.list.find((x) => x.id === id);
+  if (!t) return;
+  if (!confirm("会話「" + (t.title || "新しいチャット") + "」を削除しますか？")) return;
+  if (c.list.length <= 1) {
+    t.ui.length = 0;
+    t.history.length = 0;
+    t.title = "新しいチャット";
+    t.updatedAt = Date.now();
+    state.ui[state.mode] = t.ui;
+    state.history[state.mode] = t.history;
+  } else {
+    c.list = c.list.filter((x) => x.id !== id);
+    if (c.activeId === id) {
+      const nt = [...c.list].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))[0];
+      c.activeId = nt.id;
+      state.ui[state.mode] = nt.ui;
+      state.history[state.mode] = nt.history;
+    }
+  }
+  save();
+  renderThread();
+  renderSidebar();
+}
+function openSidebar() {
+  renderSidebar();
+  $("sidebar").classList.add("open");
+  $("scrim").hidden = false;
+}
+function closeSidebar() {
+  $("sidebar").classList.remove("open");
+  $("scrim").hidden = true;
 }
 
 /* ---------- データの書き出し／読み込み（端末間の移動用） ----------
@@ -301,6 +467,7 @@ function addItem(who, text, imgUrl) {
   const item = { who, text: text || "", imgUrl: imgUrl || null };
   state.ui[state.mode].push(item);
   drawItem(item);
+  touchThread(who === "user" ? text : null);
   save();
   return item;
 }
@@ -371,7 +538,19 @@ function drawItem(item) {
       div.appendChild(note);
     }
   }
-  thread.appendChild(div);
+  if (item.who === "user") {
+    thread.appendChild(div);
+  } else {
+    const wrap = document.createElement("div");
+    wrap.className = "row-wrap";
+    const av = document.createElement("img");
+    av.className = "avatar";
+    av.src = CAT_ICON;
+    av.alt = "";
+    wrap.appendChild(av);
+    wrap.appendChild(div);
+    thread.appendChild(wrap);
+  }
   thread.scrollTop = thread.scrollHeight;
   return { div, body };
 }
@@ -789,6 +968,7 @@ document.querySelectorAll(".mode").forEach((btn) => {
     state.mode = btn.dataset.mode;
     fillModelSelect();
     renderThread();
+    renderSidebar();
     save();
   });
 });
@@ -804,9 +984,12 @@ routeSelect.addEventListener("change", () => {
 });
 
 $("clearBtn").addEventListener("click", () => {
-  state.ui[state.mode] = [];
-  if (state.history[state.mode]) state.history[state.mode] = [];
+  state.ui[state.mode].length = 0;
+  if (state.history[state.mode]) state.history[state.mode].length = 0;
+  const t = activeThread();
+  if (t) { t.title = "新しいチャット"; t.updatedAt = Date.now(); }
   renderThread();
+  renderSidebar();
   save();
 });
 
@@ -871,6 +1054,8 @@ $("importFile").addEventListener("change", async () => {
       imported
     );
     state.apiKey = keepKey;
+    migrateConvs(state);
+    linkActiveThreads();
     save();
     routeSelect.value = state.routeChoice || "auto";
     document.querySelectorAll(".mode").forEach((b) =>
@@ -878,6 +1063,7 @@ $("importFile").addEventListener("change", async () => {
     );
     fillModelSelect();
     renderThread();
+    renderSidebar();
     updateKeyNotice();
     loadModels();
     $("syncMsg").textContent = "読み込みました。会話と設定を置き換えました。";
@@ -886,7 +1072,24 @@ $("importFile").addEventListener("change", async () => {
   }
 });
 
+$("sideBtn").addEventListener("click", openSidebar);
+$("sideCloseBtn").addEventListener("click", closeSidebar);
+$("scrim").addEventListener("click", closeSidebar);
+$("newChatBtn").addEventListener("click", () => {
+  if (state.mode === "image") return;
+  const t = {
+    id: genThreadId(), title: "新しいチャット",
+    createdAt: Date.now(), updatedAt: Date.now(), ui: [], history: [],
+  };
+  state.convs[state.mode].list.unshift(t);
+  switchThread(t.id);
+  closeSidebar();
+  input.focus();
+});
+
 /* ---------- 起動 ---------- */
+migrateConvs(state);
+linkActiveThreads();
 if (state.mode !== "chat") {
   document.querySelectorAll(".mode").forEach((b) =>
     b.classList.toggle("active", b.dataset.mode === state.mode)
@@ -896,6 +1099,7 @@ updateKeyNotice();
 routeSelect.value = state.routeChoice || "auto";
 fillModelSelect();
 renderThread();
+renderSidebar();
 loadModels();
 
 // 単体HTML版：Service Workerなし
