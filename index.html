@@ -126,6 +126,17 @@ dialog { border: 0; border-radius: 20px; padding: 0; max-width: 480px; width: 92
 #projectList { display: flex; flex-direction: column; gap: 4px; }
 .conv .edit { background: transparent; color: #999; padding: 2px 8px; }
 #projInstr { width: 100%; min-height: 180px; resize: vertical; line-height: 1.6; }
+#composer { flex-direction: column; align-items: stretch; }
+.composer-row { display: flex; gap: 10px; align-items: flex-end; width: 100%; }
+#attBar { display: flex; gap: 8px; flex-wrap: wrap; padding: 2px 2px 8px; }
+.att-item { display: flex; align-items: center; gap: 6px; background: #f3f1ec; border: 1px solid #e7e5e0; border-radius: 10px; padding: 4px 8px; font-size: .85rem; }
+.att-item img { width: 36px; height: 36px; object-fit: cover; border-radius: 6px; }
+.att-item button { padding: 2px 7px; background: transparent; color: #999; }
+#attachBtn { font-size: 1.15rem; padding: 10px; }
+#attachBtn:disabled { opacity: .35; }
+.att-wrap { margin-bottom: 6px; }
+.att-img { max-width: 240px; max-height: 240px; border-radius: 12px; border: 1px solid #e7e5e0; display: block; }
+.att-chip { display: inline-block; background: #fff; border: 1px solid #ddd9d2; border-radius: 8px; padding: 3px 8px; font-size: .82rem; margin: 0 6px 4px 0; }
 .danger { color: #c0392b !important; border-color: #e5b4b4 !important; }
 @media (min-width: 1024px) {
   body { padding-left: 300px; }
@@ -190,8 +201,13 @@ dialog { border: 0; border-radius: 20px; padding: 0; max-width: 480px; width: 92
 
 <footer>
   <form id="composer">
-    <textarea id="input" rows="2" placeholder="メッセージを入力（Enterで送信、Shift+Enterで改行）"></textarea>
-    <button id="sendBtn" type="submit" aria-label="送信">↑</button>
+    <div id="attBar" hidden></div>
+    <div class="composer-row">
+      <button id="attachBtn" type="button" class="ghost" title="ファイルや画像を添付（画像・テキストファイル）">📎</button>
+      <textarea id="input" rows="2" placeholder="メッセージを入力（Enterで送信、Shift+Enterで改行）"></textarea>
+      <button id="sendBtn" type="submit" aria-label="送信">↑</button>
+    </div>
+    <input type="file" id="fileInput" hidden multiple accept="image/*,.txt,.md,.csv,.tsv,.json,.js,.ts,.jsx,.tsx,.html,.htm,.css,.py,.xml,.svg,.log,.yaml,.yml,.toml">
   </form>
   <p class="hint" id="modeHint">チャット：ふつうの相談や文章作成に。モデルは Logfare Auto がおすすめです。</p>
 </footer>
@@ -619,8 +635,8 @@ function downloadCode(code) {
   setTimeout(() => URL.revokeObjectURL(a.href), 4000);
 }
 
-function addItem(who, text, imgUrl) {
-  const item = { who, text: text || "", imgUrl: imgUrl || null };
+function addItem(who, text, imgUrl, extra) {
+  const item = Object.assign({ who, text: text || "", imgUrl: imgUrl || null }, extra || {});
   state.ui[state.mode].push(item);
   drawItem(item);
   touchThread(who === "user" ? text : null);
@@ -634,6 +650,26 @@ function drawItem(item) {
   const body = document.createElement("div");
   renderRich(body, item.text);
   div.appendChild(body);
+  if ((item.attachImg && String(item.attachImg).startsWith("data:image/")) || (Array.isArray(item.fileNames) && item.fileNames.length)) {
+    const wrap = document.createElement("div");
+    wrap.className = "att-wrap";
+    if (item.attachImg && String(item.attachImg).startsWith("data:image/")) {
+      const im = document.createElement("img");
+      im.className = "att-img";
+      im.src = item.attachImg;
+      im.alt = "添付画像";
+      wrap.appendChild(im);
+    }
+    if (Array.isArray(item.fileNames)) {
+      for (const n of item.fileNames) {
+        const c = document.createElement("span");
+        c.className = "att-chip";
+        c.textContent = "📄 " + n;
+        wrap.appendChild(c);
+      }
+    }
+    body.insertBefore(wrap, body.firstChild);
+  }
   if (item.imgUrl) {
     const img = document.createElement("img");
     img.className = "gen";
@@ -761,6 +797,7 @@ async function loadModels() {
   } catch (_) { /* 取得できなければ同梱の既定値を使う */ }
   autoUpgradeModels();
   fillModelSelect();
+  $("attachBtn").disabled = state.mode === "image";
 }
 
 /* ---------- 自動切り替え（無料枠のみ・同じ系列の新しい版へ） ---------- */
@@ -927,9 +964,10 @@ function apiErrorMessage(status, serverMsg) {
   return "エラー（" + status + "）: " + (serverMsg || "不明なエラー");
 }
 
-async function sendChat(text) {
+async function sendChat(text, atts) {
   const mode = state.mode;
-  state.history[mode].push({ role: "user", content: text });
+  const content = atts && atts.length ? buildUserContent(text, atts).content : text;
+  state.history[mode].push({ role: "user", content });
   const messages = [
     { role: "system", content: buildSystemContent(mode) },
     ...state.history[mode],
@@ -1070,11 +1108,118 @@ async function sendImage(prompt) {
   }
 }
 
+/* ---------- 添付ファイル（画像・テキストファイル） ---------- */
+let pendingAtts = [];
+const TEXT_EXTS = [".txt", ".md", ".csv", ".tsv", ".json", ".js", ".ts", ".jsx", ".tsx", ".html", ".htm", ".css", ".py", ".xml", ".svg", ".log", ".yaml", ".yml", ".toml"];
+function attNotice(msg) {
+  const n = $("autoNotice");
+  n.hidden = false;
+  n.textContent = msg;
+}
+function isTextFile(f) {
+  return f.type.startsWith("text/") || f.type === "application/json" ||
+    TEXT_EXTS.some((e) => f.name.toLowerCase().endsWith(e));
+}
+function downscaleImage(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const max = 1024;
+      const sc = Math.min(1, max / Math.max(img.width, img.height));
+      const cv = document.createElement("canvas");
+      cv.width = Math.max(1, Math.round(img.width * sc));
+      cv.height = Math.max(1, Math.round(img.height * sc));
+      cv.getContext("2d").drawImage(img, 0, 0, cv.width, cv.height);
+      URL.revokeObjectURL(url);
+      resolve(cv.toDataURL("image/jpeg", 0.85));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("画像を読み込めませんでした")); };
+    img.src = url;
+  });
+}
+async function addFiles(files) {
+  for (const f of files) {
+    if (pendingAtts.length >= 4) { attNotice("添付は1回に4つまでです"); break; }
+    try {
+      if (f.type.startsWith("image/")) {
+        pendingAtts.push({ kind: "image", url: await downscaleImage(f), name: f.name });
+      } else if (isTextFile(f)) {
+        let t = await f.text();
+        let truncated = false;
+        if (t.length > 100000) { t = t.slice(0, 100000); truncated = true; }
+        pendingAtts.push({ kind: "file", name: f.name, text: t, truncated });
+      } else {
+        attNotice("対応していないファイルです: " + f.name + "（画像とテキストファイルのみ添付できます）");
+      }
+    } catch (err) {
+      attNotice(err.message || String(err));
+    }
+  }
+  renderAttBar();
+}
+function renderAttBar() {
+  const bar = $("attBar");
+  bar.textContent = "";
+  bar.hidden = pendingAtts.length === 0;
+  pendingAtts.forEach((a, i) => {
+    const d = document.createElement("div");
+    d.className = "att-item";
+    if (a.kind === "image") {
+      const im = document.createElement("img");
+      im.src = a.url;
+      im.alt = "";
+      d.appendChild(im);
+    }
+    const s = document.createElement("span");
+    s.textContent = a.kind === "image" ? "🖼 " + (a.name || "画像") : "📄 " + a.name;
+    d.appendChild(s);
+    const x = document.createElement("button");
+    x.type = "button";
+    x.textContent = "✕";
+    x.addEventListener("click", () => { pendingAtts.splice(i, 1); renderAttBar(); });
+    d.appendChild(x);
+    bar.appendChild(d);
+  });
+}
+/* 添付つきユーザー発言の組み立て: テキストファイルは本文に埋め込み、画像はvision形式のパートにする */
+function buildUserContent(text, atts) {
+  let content = text;
+  const fileNames = [];
+  let attachImg = null;
+  const files = atts.filter((a) => a.kind === "file");
+  const imgs = atts.filter((a) => a.kind === "image");
+  if (files.length) {
+    const blocks = files.map((a) =>
+      "【添付ファイル: " + a.name + (a.truncated ? "（長いため先頭10万字まで）" : "") + "】\n```\n" + a.text + "\n```");
+    content = blocks.join("\n\n") + (text ? "\n\n" + text : "");
+    for (const f of files) fileNames.push(f.name);
+  }
+  if (imgs.length) {
+    attachImg = imgs[0].url;
+    const parts = [];
+    if (content) parts.push({ type: "text", text: content });
+    for (const im of imgs) parts.push({ type: "image_url", image_url: { url: im.url } });
+    content = parts;
+  }
+  return { content, attachImg, fileNames };
+}
+
+$("attachBtn").addEventListener("click", () => $("fileInput").click());
+$("fileInput").addEventListener("change", async (e) => {
+  await addFiles([...e.target.files]);
+  e.target.value = "";
+});
+input.addEventListener("paste", (e) => {
+  const files = [...((e.clipboardData && e.clipboardData.files) || [])];
+  if (files.length) { e.preventDefault(); addFiles(files); }
+});
+
 /* ---------- イベント ---------- */
 $("composer").addEventListener("submit", async (e) => {
   e.preventDefault();
   const text = input.value.trim();
-  if (!text) return;
+  if (!text && pendingAtts.length === 0) return;
   // 行き先の振り分け（画像モードは常にLogfare。振り分け先へはAPIキー不要）
   if (state.mode !== "image") {
     let det;
@@ -1091,6 +1236,7 @@ $("composer").addEventListener("submit", async (e) => {
       input.value = "";
       addItem("user", text);
       doHandoff(det.route, det.kind, det.reason, text);
+      if (pendingAtts.length) attNotice("行き先が変更されたため、添付ファイルはまだ送っていません（入力欄の下に残しています）");
       input.focus();
       return;
     }
@@ -1100,11 +1246,20 @@ $("composer").addEventListener("submit", async (e) => {
     return;
   }
   input.value = "";
-  addItem("user", text);
+  const atts = pendingAtts;
+  pendingAtts = [];
+  renderAttBar();
+  if (state.mode === "image") {
+    addItem("user", text);
+    if (atts.length) attNotice("画像モードでは添付ファイルは使えません（添付は取り消しました）");
+  } else {
+    const built = atts.length ? buildUserContent(text, atts) : null;
+    addItem("user", text, null, built ? { attachImg: built.attachImg, fileNames: built.fileNames } : null);
+  }
   $("sendBtn").disabled = true;
   try {
     if (state.mode === "image") await sendImage(text);
-    else await sendChat(text);
+    else await sendChat(text, atts);
   } finally {
     $("sendBtn").disabled = false;
     input.focus();
@@ -1124,6 +1279,7 @@ document.querySelectorAll(".mode").forEach((btn) => {
     btn.classList.add("active");
     state.mode = btn.dataset.mode;
     fillModelSelect();
+    $("attachBtn").disabled = state.mode === "image";
     renderThread();
     renderSidebar();
     save();
@@ -1291,6 +1447,7 @@ if (state.mode !== "chat") {
 updateKeyNotice();
 routeSelect.value = state.routeChoice || "auto";
 fillModelSelect();
+$("attachBtn").disabled = state.mode === "image";
 renderThread();
 renderSidebar();
 loadModels();
