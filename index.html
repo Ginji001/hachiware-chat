@@ -11,6 +11,7 @@
 <title>ハチワレ チャット（Logfare）</title>
 <link rel="icon" href="icon-512.png">
 <link rel="apple-touch-icon" href="icon-180.png">
+<link rel="manifest" href="manifest.webmanifest">
 <style>
 * { box-sizing: border-box; }
 html, body { height: 100%; }
@@ -1102,7 +1103,10 @@ renderThread();
 renderSidebar();
 loadModels();
 
-// 単体HTML版：Service Workerなし
+/* PWA：Service Workerの登録（https配信時のみ。file://では何もしない） */
+if ("serviceWorker" in navigator && location.protocol === "https:") {
+  navigator.serviceWorker.register("sw.js").catch(() => { /* 登録できなくても通常動作 */ });
+}
 
 </script>
 </body>
