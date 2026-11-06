@@ -163,12 +163,6 @@ dialog { border: 0; border-radius: 20px; padding: 0; max-width: 480px; width: 92
 </aside>
 <div id="scrim" hidden></div>
 
-<nav class="modes" role="tablist">
-  <button data-mode="chat" class="mode active" type="button">💬 チャット</button>
-  <button data-mode="image" class="mode" type="button">🖼️ 画像</button>
-  <button data-mode="app" class="mode" type="button">📱 アプリ作成</button>
-</nav>
-
 <div class="modelbar">
   <label>モデル <select id="modelSelect"></select></label>
   <label>行き先
@@ -178,14 +172,6 @@ dialog { border: 0; border-radius: 20px; padding: 0; max-width: 480px; width: 92
       <option value="claude">Claude（仕上げ）へ</option>
       <option value="dev">開発（OpenCode／ロク）へ</option>
       <option value="roku">ロク（メール・Mac・調べもの）へ</option>
-    </select>
-  </label>
-  <label id="sizeWrap" hidden>サイズ
-    <select id="sizeSelect">
-      <option value="1024x1024">正方形 1024</option>
-      <option value="1024x576">横長 1024×576</option>
-      <option value="1280x670">note用 1280×670</option>
-      <option value="512x512">小さめ 512</option>
     </select>
   </label>
   <button id="clearBtn" class="ghost" type="button">会話を消す</button>
@@ -209,7 +195,7 @@ dialog { border: 0; border-radius: 20px; padding: 0; max-width: 480px; width: 92
     </div>
     <input type="file" id="fileInput" hidden multiple accept="image/*,.txt,.md,.csv,.tsv,.json,.js,.ts,.jsx,.tsx,.html,.htm,.css,.py,.xml,.svg,.log,.yaml,.yml,.toml">
   </form>
-  <p class="hint" id="modeHint">チャット：ふつうの相談や文章作成に。モデルは Logfare Auto がおすすめです。</p>
+  <p class="hint" id="modeHint">相談・文章・アプリ作成はそのまま書いて送信。「猫の画像を作って」のように書くと画像を作ります（横長・サムネイル・縦長などの指定もできます）。行き先が「自動」のとき、開発・仕上げ・メールやMacの操作・最新情報・秘密情報を含みそうな内容は、Logfareに送らず行き先を切り替えて引き継ぎ文を作ります。</p>
 </footer>
 
 <dialog id="settings">
@@ -273,10 +259,14 @@ const API = "https://logfare.ai/v1";
 const LS_KEY = "hachiware-chat-state-v1";
 const CAT_ICON = "icon-512.png";
 
+/* チャットで使うのは上位モデルのみ（この順で表示）。既定は先頭のGLM 5.3 */
+const TOP_CHAT_IDS = ["glm-5.3", "qwen-3.8-27b", "gemma-4-31b-it", "deepseek-v4.1-flash-1017"];
 const FALLBACK_MODELS = {
   chat: [
-    { id: "logfare/auto", label: "Logfare Auto（おすすめ・自動選択）" },
-    { id: "gemma-4-26b", label: "Gemma 4 26B" },
+    { id: "glm-5.3", label: "GLM 5.3" },
+    { id: "qwen-3.8-27b", label: "Qwen 3.8 27B" },
+    { id: "gemma-4-31b-it", label: "Gemma 4 31B IT" },
+    { id: "deepseek-v4.1-flash-1017", label: "DeepSeek V4.1 Flash" },
   ],
   image: [
     { id: "flux-2-dev", label: "FLUX.2 Dev（高画質）" },
@@ -286,17 +276,9 @@ const FALLBACK_MODELS = {
   ],
 };
 
-const SYSTEM_PROMPTS = {
-  chat: "あなたは親切な日本語アシスタントです。簡潔で正確に答えてください。",
-  app:
-    "あなたはPWA開発アシスタントです。日本語で短く説明したあと、コピー＆ペーストでそのままブラウザで動く単一HTMLファイル全体（CSSとJavaScript込み）を、1つのコードブロックで出力してください。データ保存が必要ならlocalStorageを使ってください。",
-};
-
-const HINTS = {
-  chat: "チャット：ふつうの相談や文章作成に。行き先が「自動」のとき、開発・仕上げ・メールやMacの操作・最新情報の調べもの・秘密情報を含みそうな内容は、Logfareに送らず行き先を切り替えて引き継ぎ文を作ります。",
-  image: "画像：作りたい画像の説明を入力して送信してください。文字入りの画像は崩れやすいので、文字なしがおすすめです。",
-  app: "アプリ作成：作りたいPWAの内容を書くと、単一HTMLのコードが返ります。コード下の「ファイルとして保存」から保存して開けます。",
-};
+const SYSTEM_PROMPT =
+  "あなたは親切な日本語アシスタントです。簡潔で正確に答えてください。" +
+  "アプリやPWA、ツールを作ってほしいと頼まれたら、日本語で短く説明したあと、そのままブラウザで動く単一HTMLファイル全体（CSSとJavaScript込み）を1つのコードブロックで出力してください。データ保存が必要ならlocalStorageを使ってください。";
 
 let models = structuredClone(FALLBACK_MODELS);
 let state = {
@@ -307,7 +289,7 @@ let state = {
   convs: null,
   projects: [],
   projectFilter: "all",
-  modelChoice: { chat: "logfare/auto", app: "logfare/auto", image: "flux-2-dev" },
+  modelChoice: { chat: "glm-5.3", image: "flux-2-dev" },
   ui: { chat: [], app: [], image: [] },
   history: { chat: [], app: [] },
 };
@@ -322,8 +304,6 @@ const thread = $("thread");
 const input = $("input");
 const modelSelect = $("modelSelect");
 const routeSelect = $("routeSelect");
-const sizeWrap = $("sizeWrap");
-const sizeSelect = $("sizeSelect");
 
 function save() {
   try {
@@ -361,19 +341,50 @@ function migrateConvs(st) {
   }
   return st;
 }
-function linkActiveThreads() {
-  for (const m of ["chat", "app"]) {
-    const c = state.convs[m];
-    const t = c.list.find((x) => x.id === c.activeId) || c.list[0];
-    c.activeId = t.id;
-    t.ui = state.ui[m];
-    t.history = state.history[m];
+/* モード廃止に伴う統合（1回だけ）: アプリ作成モードの会話をチャットへ移し、
+   画像モードの履歴は「画像の履歴」という会話にする。会話の中身は消さない。 */
+function unifyState(st) {
+  if (st.unified) return st;
+  const chat = st.convs && st.convs.chat;
+  if (chat) {
+    const app = st.convs.app;
+    if (app && Array.isArray(app.list)) {
+      const ids = new Set(chat.list.map((t) => t.id));
+      for (const t of app.list) if (!ids.has(t.id)) chat.list.push(t);
+      if (st.mode === "app" && app.activeId) chat.activeId = app.activeId;
+    }
+    delete st.convs.app;
+    const imgs = (st.ui && st.ui.image) || [];
+    if (imgs.length) {
+      chat.list.push({
+        id: genThreadId(), title: "画像の履歴",
+        createdAt: Date.now(), updatedAt: Date.now(),
+        ui: imgs, history: [], projectId: null,
+      });
+    }
   }
+  if (st.ui) st.ui.image = [];
+  if (st.ui) st.ui.app = [];
+  if (st.history) st.history.app = [];
+  st.mode = "chat";
+  if (!st.modelChoice) st.modelChoice = {};
+  if (!TOP_CHAT_IDS.includes(st.modelChoice.chat)) st.modelChoice.chat = "glm-5.3";
+  if (!st.modelChoice.image) st.modelChoice.image = "flux-2-dev";
+  st.unified = true;
+  return st;
+}
+function linkActiveThreads() {
+  const c = state.convs.chat;
+  if (!c) return;
+  const t = c.list.find((x) => x.id === c.activeId) || c.list[0];
+  c.activeId = t.id;
+  t.ui = state.ui.chat;
+  t.history = state.history.chat;
 }
 function activeThread() {
-  if (state.mode === "image" || !state.convs) return null;
-  const c = state.convs[state.mode];
-  return c ? c.list.find((x) => x.id === c.activeId) || null : null;
+  if (!state.convs || !state.convs.chat) return null;
+  const c = state.convs.chat;
+  return c.list.find((x) => x.id === c.activeId) || null;
 }
 function touchThread(userText) {
   const t = activeThread();
@@ -403,14 +414,6 @@ function renderSidebar() {
     ? projectById(state.projectFilter) : null;
   $("convHead").textContent = "会話" + (pr ? "（" + pr.name + "）" : state.projectFilter === "none" ? "（プロジェクトなし）" : "");
   listEl.textContent = "";
-  $("newChatBtn").disabled = state.mode === "image";
-  if (state.mode === "image") {
-    const d = document.createElement("div");
-    d.className = "hint";
-    d.textContent = "画像モードは1つの履歴です。会話リストはチャット／アプリ作成モードで使えます。";
-    listEl.appendChild(d);
-    return;
-  }
   const c = state.convs[state.mode];
   const items = threadsForFilter([...c.list], state.projectFilter).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
   for (const t of items) {
@@ -497,8 +500,8 @@ function activeThreadProject() {
   const t = activeThread();
   return t && t.projectId ? projectById(t.projectId) : null;
 }
-function buildSystemContent(mode) {
-  let sys = SYSTEM_PROMPTS[mode];
+function buildSystemContent() {
+  let sys = SYSTEM_PROMPT;
   const pr = activeThreadProject();
   if (pr && (pr.instructions || "").trim()) {
     sys += "\n\n# プロジェクト「" + pr.name + "」の指示\n" + pr.instructions.trim();
@@ -754,12 +757,7 @@ function renderThread() {
   if (state.ui[state.mode].length === 0) {
     const d = document.createElement("div");
     d.className = "msg assistant";
-    d.textContent =
-      state.mode === "image"
-        ? "作りたい画像の説明を下に入力してください。例：白黒ハチワレ猫の可愛いイラスト、フラットデザイン、文字なし"
-        : state.mode === "app"
-          ? "作りたいアプリを教えてください。例：スキンケアの使用記録ができるPWA、データは端末内保存"
-          : "こんにちは。聞きたいことを下に入力してください。";
+    d.textContent = "こんにちは。聞きたいことを下に入力してください。アプリを作ってほしいときも、「猫の画像を作って」のような画像のお願いも、そのまま書いて大丈夫です。";
     thread.appendChild(d);
   }
 }
@@ -790,14 +788,14 @@ async function loadModels() {
       .filter((m) => (m.endpoints || []).includes("images/generations"))
       .map(toLabel);
     if (chat.length) {
-      chat.sort((a, b) => (a.id === "logfare/auto" ? -1 : b.id === "logfare/auto" ? 1 : 0));
-      models.chat = chat;
+      // 上位モデルのみに絞る（TOP_CHAT_IDSの順で並べる）
+      const top = TOP_CHAT_IDS.map((id) => chat.find((m) => m.id === id)).filter(Boolean);
+      models.chat = top.length ? top : chat.slice(0, 4);
     }
     if (image.length) models.image = image;
   } catch (_) { /* 取得できなければ同梱の既定値を使う */ }
   autoUpgradeModels();
   fillModelSelect();
-  $("attachBtn").disabled = state.mode === "image";
 }
 
 /* ---------- 自動切り替え（無料枠のみ・同じ系列の新しい版へ） ---------- */
@@ -838,8 +836,7 @@ function autoUpgradeModels() {
       state.modelChoice[modeKey] = newer.id;
     }
   };
-  apply("chat", models.chat, "logfare/auto");
-  apply("app", models.chat, "logfare/auto");
+  apply("chat", models.chat, "glm-5.3");
   apply("image", models.image, "flux-2-dev");
   if (notices.length) {
     const el = $("autoNotice");
@@ -850,7 +847,7 @@ function autoUpgradeModels() {
 }
 
 function fillModelSelect() {
-  const list = state.mode === "image" ? models.image : models.chat;
+  const list = models.chat;
   modelSelect.textContent = "";
   for (const m of list) {
     const opt = document.createElement("option");
@@ -858,16 +855,8 @@ function fillModelSelect() {
     opt.textContent = m.label;
     modelSelect.appendChild(opt);
   }
-  const want = state.modelChoice[state.mode];
+  const want = state.modelChoice.chat;
   if (list.some((m) => m.id === want)) modelSelect.value = want;
-  sizeWrap.hidden = state.mode !== "image";
-  $("modeHint").textContent = HINTS[state.mode];
-  input.placeholder =
-    state.mode === "image"
-      ? "作りたい画像の説明を入力して送信"
-      : state.mode === "app"
-        ? "作りたいアプリの内容を入力して送信"
-        : "メッセージを入力（Enterで送信、Shift+Enterで改行）";
 }
 
 /* ---------- 行き先の振り分け（ルーター） ----------
@@ -969,7 +958,7 @@ async function sendChat(text, atts) {
   const content = atts && atts.length ? buildUserContent(text, atts).content : text;
   state.history[mode].push({ role: "user", content });
   const messages = [
-    { role: "system", content: buildSystemContent(mode) },
+    { role: "system", content: buildSystemContent() },
     ...state.history[mode],
   ];
   const item = { who: "assistant", text: "", imgUrl: null };
@@ -1050,9 +1039,30 @@ async function sendChat(text, atts) {
   }
 }
 
+/* 画像生成の言葉づかい判定（添付があるときは画像の質問として扱い、生成しない） */
+function detectImageIntent(text, hasAtts) {
+  if (hasAtts) return false;
+  const t = String(text || "");
+  if (/(作り方|方法|やり方|分析|読み取|翻訳|要約)/.test(t)) return false;
+  if (/(画像|イラスト|絵|写真|ロゴ|アイコン|バナー|サムネイル|壁紙).{0,14}(作って|つくって|描いて|生成して|作成して|描いてください|作ってください)/.test(t)) return true;
+  if (/(画像生成|イラスト生成|画像を作|画像を描)/.test(t)) return true;
+  if (/^(draw|generate)\b.*\b(image|picture|illustration)/i.test(t)) return true;
+  return false;
+}
+/* 画像サイズは言葉から推定する（既定は正方形） */
+function sizeFromText(text) {
+  const t = String(text || "");
+  if (/サムネイル|note用/.test(t)) return "1280x670";
+  if (/縦長/.test(t)) return "576x1024";
+  if (/横長|ワイド/.test(t)) return "1024x576";
+  if (/小さめ|小さい/.test(t)) return "512x512";
+  return "1024x1024";
+}
+
 async function sendImage(prompt) {
   const item = { who: "assistant", text: "生成中です…（30秒ほどかかることがあります）", imgUrl: null };
-  state.ui.image.push(item);
+  state.ui[state.mode].push(item);
+  touchThread(prompt);
   const { div, body } = drawItem(item);
   div.classList.add("typing");
   try {
@@ -1065,7 +1075,7 @@ async function sendImage(prompt) {
       body: JSON.stringify({
         model: state.modelChoice.image,
         prompt,
-        size: sizeSelect.value,
+        size: sizeFromText(prompt),
         n: 1,
       }),
     });
@@ -1220,26 +1230,20 @@ $("composer").addEventListener("submit", async (e) => {
   e.preventDefault();
   const text = input.value.trim();
   if (!text && pendingAtts.length === 0) return;
-  // 行き先の振り分け（画像モードは常にLogfare。振り分け先へはAPIキー不要）
-  if (state.mode !== "image") {
-    let det;
-    if (state.routeChoice && state.routeChoice !== "auto") {
-      det = { route: state.routeChoice, kind: "manual", reason: "行き先を手動で選択" };
-    } else {
-      det = detectRoute(text);
-      // アプリ作成モードの試作はLogfareの仕事なので、開発・仕上げ判定はしない（秘密・操作系は振り分ける）
-      if (state.mode === "app" && (det.kind === "dev" || det.kind === "finish")) {
-        det = { route: "logfare", kind: "chat", reason: "" };
-      }
-    }
-    if (det.route !== "logfare") {
-      input.value = "";
-      addItem("user", text);
-      doHandoff(det.route, det.kind, det.reason, text);
-      if (pendingAtts.length) attNotice("行き先が変更されたため、添付ファイルはまだ送っていません（入力欄の下に残しています）");
-      input.focus();
-      return;
-    }
+  // 行き先の振り分け（振り分け先へはAPIキー不要）
+  let det;
+  if (state.routeChoice && state.routeChoice !== "auto") {
+    det = { route: state.routeChoice, kind: "manual", reason: "行き先を手動で選択" };
+  } else {
+    det = detectRoute(text);
+  }
+  if (det.route !== "logfare") {
+    input.value = "";
+    addItem("user", text);
+    doHandoff(det.route, det.kind, det.reason, text);
+    if (pendingAtts.length) attNotice("行き先が変更されたため、添付ファイルはまだ送っていません（入力欄の下に残しています）");
+    input.focus();
+    return;
   }
   if (!getKey()) {
     $("settings").showModal();
@@ -1249,16 +1253,12 @@ $("composer").addEventListener("submit", async (e) => {
   const atts = pendingAtts;
   pendingAtts = [];
   renderAttBar();
-  if (state.mode === "image") {
-    addItem("user", text);
-    if (atts.length) attNotice("画像モードでは添付ファイルは使えません（添付は取り消しました）");
-  } else {
-    const built = atts.length ? buildUserContent(text, atts) : null;
-    addItem("user", text, null, built ? { attachImg: built.attachImg, fileNames: built.fileNames } : null);
-  }
+  const wantImage = detectImageIntent(text, atts.length > 0);
+  const built = !wantImage && atts.length ? buildUserContent(text, atts) : null;
+  addItem("user", text, null, built ? { attachImg: built.attachImg, fileNames: built.fileNames } : null);
   $("sendBtn").disabled = true;
   try {
-    if (state.mode === "image") await sendImage(text);
+    if (wantImage) await sendImage(text);
     else await sendChat(text, atts);
   } finally {
     $("sendBtn").disabled = false;
@@ -1273,21 +1273,8 @@ input.addEventListener("keydown", (e) => {
   }
 });
 
-document.querySelectorAll(".mode").forEach((btn) => {
-  btn.addEventListener("click", () => {
-    document.querySelectorAll(".mode").forEach((b) => b.classList.remove("active"));
-    btn.classList.add("active");
-    state.mode = btn.dataset.mode;
-    fillModelSelect();
-    $("attachBtn").disabled = state.mode === "image";
-    renderThread();
-    renderSidebar();
-    save();
-  });
-});
-
 modelSelect.addEventListener("change", () => {
-  state.modelChoice[state.mode] = modelSelect.value;
+  state.modelChoice.chat = modelSelect.value;
   save();
 });
 
@@ -1362,20 +1349,18 @@ $("importFile").addEventListener("change", async () => {
     const keepKey = state.apiKey;
     state = Object.assign(
       { mode: "chat", autoUpgrade: true, routeChoice: "auto",
-        modelChoice: { chat: "logfare/auto", app: "logfare/auto", image: "flux-2-dev" },
+        modelChoice: { chat: "glm-5.3", image: "flux-2-dev" },
         ui: { chat: [], app: [], image: [] }, history: { chat: [], app: [] },
         projects: [], projectFilter: "all" },
       imported
     );
     state.apiKey = keepKey;
     migrateConvs(state);
+    unifyState(state);
     migrateProjects(state);
     linkActiveThreads();
     save();
     routeSelect.value = state.routeChoice || "auto";
-    document.querySelectorAll(".mode").forEach((b) =>
-      b.classList.toggle("active", b.dataset.mode === state.mode)
-    );
     fillModelSelect();
     renderThread();
     renderSidebar();
@@ -1391,7 +1376,6 @@ $("sideBtn").addEventListener("click", openSidebar);
 $("sideCloseBtn").addEventListener("click", closeSidebar);
 $("scrim").addEventListener("click", closeSidebar);
 $("newChatBtn").addEventListener("click", () => {
-  if (state.mode === "image") return;
   const t = {
     id: genThreadId(), title: "新しいチャット",
     createdAt: Date.now(), updatedAt: Date.now(), ui: [], history: [],
@@ -1425,9 +1409,7 @@ $("projDelete").addEventListener("click", () => {
   if (!p) return;
   if (!confirm("プロジェクト「" + p.name + "」を削除しますか？会話は消えず、プロジェクトなしになります。")) return;
   state.projects = state.projects.filter((x) => x.id !== p.id);
-  for (const m of ["chat", "app"]) {
-    for (const t of state.convs[m].list) if (t.projectId === p.id) t.projectId = null;
-  }
+  for (const t of state.convs.chat.list) if (t.projectId === p.id) t.projectId = null;
   if (state.projectFilter === p.id) state.projectFilter = "all";
   save();
   renderSidebar();
@@ -1437,17 +1419,12 @@ $("projDelete").addEventListener("click", () => {
 
 /* ---------- 起動 ---------- */
 migrateConvs(state);
+unifyState(state);
 migrateProjects(state);
 linkActiveThreads();
-if (state.mode !== "chat") {
-  document.querySelectorAll(".mode").forEach((b) =>
-    b.classList.toggle("active", b.dataset.mode === state.mode)
-  );
-}
 updateKeyNotice();
 routeSelect.value = state.routeChoice || "auto";
 fillModelSelect();
-$("attachBtn").disabled = state.mode === "image";
 renderThread();
 renderSidebar();
 loadModels();
