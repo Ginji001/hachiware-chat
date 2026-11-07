@@ -74,7 +74,6 @@ header {
 .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; }
 .brand .sub { color: var(--muted); font-weight: 400; font-size: .8rem; }
 #brandIcon { width: 32px; height: 32px; border-radius: 50%; background: var(--panel); }
-#sideBtn { font-size: 1.15rem; padding: 6px 8px; border: 0; }
 button {
   font: inherit; cursor: pointer; border: 0; border-radius: 999px;
   background: var(--text); color: var(--on-dark); padding: 9px 16px;
@@ -136,8 +135,21 @@ dialog { border: 0; border-radius: 20px; padding: 0; max-width: 480px; width: 92
 .settings-box .row { display: flex; gap: 8px; justify-content: flex-end; }
 .settings-box .hint { text-align: left; margin: 0; }
 .typing { opacity: .55; }
+#rail {
+  position: fixed; left: 0; top: 0; bottom: 0; width: 52px; z-index: 41;
+  background: var(--panel); border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; align-items: center; padding: 10px 0; gap: 6px;
+}
+#rail button {
+  background: transparent; color: var(--text); width: 38px; height: 38px; padding: 0;
+  border-radius: 10px; font-size: 1.05rem; display: grid; place-items: center;
+}
+#rail button:hover { background: var(--hover); }
+#rail .sp { flex: 1; }
+#rail img { width: 30px; height: 30px; border-radius: 50%; cursor: pointer; background: var(--panel); }
+body { padding-left: 52px; }
 #sidebar {
-  position: fixed; top: 0; left: 0; bottom: 0; width: min(300px, 85vw);
+  position: fixed; top: 0; left: 52px; bottom: 0; width: min(300px, 85vw);
   background: var(--panel); border-right: 1px solid var(--border); z-index: 40;
   transform: translateX(-105%); transition: transform .2s;
   display: flex; flex-direction: column; padding: 16px 12px; gap: 12px;
@@ -184,18 +196,28 @@ dialog { border: 0; border-radius: 20px; padding: 0; max-width: 480px; width: 92
 #projBar { background: var(--projbar-bg); border-color: var(--projbar-border); }
 .danger { color: #c0392b !important; border-color: #e5b4b4 !important; }
 @media (min-width: 1024px) {
-  body { padding-left: 300px; }
+  body { padding-left: 352px; }
   #sidebar { transform: none; width: 300px; }
-  #sideBtn, #sideCloseBtn { display: none; }
+  #sideCloseBtn { display: none; }
   #scrim { display: none !important; }
 }
 </style>
 </head>
 <body>
 <header>
-  <div class="brand"><button id="sideBtn" class="ghost" type="button" aria-label="会話リスト">☰</button><img id="brandIcon" src="icon-512.png" alt=""></div>
+  <div class="brand"><img id="brandIcon" src="icon-512.png" alt=""></div>
   <button id="settingsBtn" class="ghost" type="button" aria-label="設定" title="設定">⚙️</button>
 </header>
+
+<nav id="rail" aria-label="ショートカット">
+  <button id="railMenu" type="button" title="サイドバーを開く・閉じる">☰</button>
+  <button id="railNew" type="button" title="新しいチャット">✏️</button>
+  <button id="railSearch" type="button" title="会話を検索">🔍</button>
+  <button id="railProj" type="button" title="プロジェクト">📁</button>
+  <span class="sp"></span>
+  <button id="railSettings" type="button" title="設定">⚙️</button>
+  <img id="railAvatar" src="icon-512.png" alt="ハチワレ" title="サイドバーを開く">
+</nav>
 
 <aside id="sidebar" aria-label="会話リスト">
   <div class="side-head"><span></span><button id="sideCloseBtn" class="ghost" type="button">✕</button></div>
@@ -1379,7 +1401,19 @@ $("importFile").addEventListener("change", async () => {
   }
 });
 
-$("sideBtn").addEventListener("click", openSidebar);
+$("railMenu").addEventListener("click", () => {
+  if ($("sidebar").classList.contains("open")) closeSidebar();
+  else openSidebar();
+});
+$("railNew").addEventListener("click", () => $("newChatBtn").click());
+$("railSearch").addEventListener("click", () => {
+  openSidebar();
+  if ($("searchInput").hidden) $("searchBtn").click();
+  else $("searchInput").focus();
+});
+$("railProj").addEventListener("click", openSidebar);
+$("railSettings").addEventListener("click", () => $("settingsBtn").click());
+$("railAvatar").addEventListener("click", openSidebar);
 $("sideCloseBtn").addEventListener("click", closeSidebar);
 $("scrim").addEventListener("click", closeSidebar);
 $("newChatBtn").addEventListener("click", () => {
