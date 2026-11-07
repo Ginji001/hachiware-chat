@@ -127,7 +127,7 @@ footer { background: var(--bg); padding: 8px 16px calc(10px + env(safe-area-inse
   background: var(--bg); border: 1px solid var(--composer-border); border-radius: 24px;
   padding: 4px 6px 4px 10px; box-shadow: 0 2px 10px var(--shadow);
 }
-#composer textarea { flex: 1; resize: none; border: 0; outline: none; padding: 3px 2px; background: transparent; font-size: 1rem; line-height: 1.4; height: 24px; overflow-y: auto; }
+#composer textarea { flex: 1; resize: none; border: 0; outline: none; padding: 3px 2px; background: transparent; font-size: 1rem; line-height: 1.4; max-height: 140px; overflow-y: auto; }
 #sendBtn { width: 34px; height: 34px; border-radius: 50%; padding: 0; font-size: 1rem; flex: none; display: grid; place-items: center; }
 .hint { color: var(--muted); font-size: .78rem; max-width: 800px; margin: 8px auto 0; text-align: center; }
 dialog { border: 0; border-radius: 20px; padding: 0; max-width: 480px; width: 92%; box-shadow: 0 12px 40px rgba(0,0,0,.18); background: var(--bg); color: var(--text); }
@@ -169,7 +169,9 @@ dialog { border: 0; border-radius: 20px; padding: 0; max-width: 480px; width: 92
 .conv .edit { background: transparent; color: var(--muted); padding: 2px 8px; }
 #projInstr { width: 100%; min-height: 180px; resize: vertical; line-height: 1.6; }
 #composer { flex-direction: column; align-items: stretch; }
-.composer-row { display: flex; gap: 6px; align-items: center; width: 100%; height: 36px; }
+.composer-row { display: flex; gap: 6px; align-items: flex-end; width: 100%; min-height: 36px; }
+.composer-row #attachBtn, .composer-row #sendBtn { align-self: flex-end; margin-bottom: 1px; }
+.composer-row #modelSelect { align-self: flex-end; margin-bottom: 5px; }
 #attBar { display: flex; gap: 8px; flex-wrap: wrap; padding: 2px 2px 8px; }
 .att-item { display: flex; align-items: center; gap: 6px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 4px 8px; font-size: .85rem; }
 .att-item img { width: 36px; height: 36px; object-fit: cover; border-radius: 6px; }
@@ -1251,6 +1253,7 @@ $("composer").addEventListener("submit", async (e) => {
   const det = detectRoute(text);
   if (det.route !== "logfare") {
     input.value = "";
+    fitInput();
     addItem("user", text);
     doHandoff(det.route, det.kind, det.reason, text);
     if (pendingAtts.length) attNotice("行き先が変更されたため、添付ファイルはまだ送っていません（入力欄の下に残しています）");
@@ -1262,6 +1265,7 @@ $("composer").addEventListener("submit", async (e) => {
     return;
   }
   input.value = "";
+  fitInput();
   const atts = pendingAtts;
   pendingAtts = [];
   renderAttBar();
@@ -1277,6 +1281,13 @@ $("composer").addEventListener("submit", async (e) => {
     input.focus();
   }
 });
+
+/* 入力に合わせて折り返して伸ばす（1行→最大140pxまで。超えた分だけスクロール） */
+function fitInput() {
+  input.style.height = "auto";
+  input.style.height = Math.min(input.scrollHeight, 140) + "px";
+}
+input.addEventListener("input", fitInput);
 
 input.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
@@ -1435,6 +1446,7 @@ migrateProjects(state);
 linkActiveThreads();
 updateKeyNotice();
 fillModelSelect();
+fitInput();
 renderThread();
 renderSidebar();
 loadModels();
