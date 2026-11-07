@@ -70,7 +70,6 @@ body {
 header {
   display: flex; justify-content: space-between; align-items: center;
   background: var(--bg); color: var(--text); padding: 10px 16px;
-  border-bottom: 1px solid var(--border);
 }
 .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; }
 .brand .sub { color: var(--muted); font-weight: 400; font-size: .8rem; }
@@ -82,14 +81,12 @@ button {
 }
 button.ghost { background: transparent; border: 1px solid var(--border); color: var(--text); }
 button:disabled { opacity: .45; cursor: default; }
-.composer-bar { display: flex; align-items: center; gap: 8px; padding: 2px 2px 0; width: 100%; }
-.composer-bar .spacer { flex: 1; }
-.composer-bar select {
-  border: 0; background: transparent; color: var(--muted); font-size: .8rem;
-  padding: 4px 2px; border-radius: 8px; max-width: 36vw; text-overflow: ellipsis;
+#modelSelect {
+  border: 0; background: transparent; color: var(--muted); font-size: .82rem;
+  padding: 4px 2px; border-radius: 8px; max-width: 30vw; flex: none;
+  text-overflow: ellipsis; cursor: pointer;
 }
-#modelSelect { max-width: 42vw; }
-#clearBtn { font-size: .78rem; padding: 4px 10px; color: var(--muted); }
+#settingsBtn { border: 0; font-size: 1.05rem; padding: 7px 10px; }
 select, input, textarea {
   font: inherit; border: 1px solid var(--border); border-radius: 12px; padding: 8px 10px; background: var(--bg); color: var(--text);
 }
@@ -185,8 +182,8 @@ dialog { border: 0; border-radius: 20px; padding: 0; max-width: 480px; width: 92
 </head>
 <body>
 <header>
-  <div class="brand"><button id="sideBtn" class="ghost" type="button" aria-label="会話リスト">☰</button><img id="brandIcon" src="icon-512.png" alt="">ハチワレ チャット <span class="sub">Logfare</span></div>
-  <button id="settingsBtn" class="ghost" type="button" aria-label="設定" title="設定" style="font-size:1.05rem;padding:7px 10px">⚙️</button>
+  <div class="brand"><button id="sideBtn" class="ghost" type="button" aria-label="会話リスト">☰</button><img id="brandIcon" src="icon-512.png" alt=""></div>
+  <button id="settingsBtn" class="ghost" type="button" aria-label="設定" title="設定">⚙️</button>
 </header>
 
 <aside id="sidebar" aria-label="会話リスト">
@@ -211,19 +208,8 @@ dialog { border: 0; border-radius: 20px; padding: 0; max-width: 480px; width: 92
     <div class="composer-row">
       <button id="attachBtn" type="button" class="ghost" title="ファイルや画像を添付（画像・テキストファイル）">📎</button>
       <textarea id="input" rows="1" placeholder="メッセージを入力"></textarea>
-      <button id="sendBtn" type="submit" aria-label="送信">↑</button>
-    </div>
-    <div class="composer-bar">
-      <button id="clearBtn" class="ghost" type="button">会話を消す</button>
-      <span class="spacer"></span>
       <select id="modelSelect" title="モデル"></select>
-      <select id="routeSelect" title="行き先">
-        <option value="auto">自動（振り分け）</option>
-        <option value="logfare">ハチワレで処理</option>
-        <option value="claude">Claude（仕上げ）へ</option>
-        <option value="dev">開発（OpenCode／ロク）へ</option>
-        <option value="roku">ロク（メール・Mac・調べもの）へ</option>
-      </select>
+      <button id="sendBtn" type="submit" aria-label="送信">↑</button>
     </div>
     <input type="file" id="fileInput" hidden multiple accept="image/*,.txt,.md,.csv,.tsv,.json,.js,.ts,.jsx,.tsx,.html,.htm,.css,.py,.xml,.svg,.log,.yaml,.yml,.toml">
   </form>
@@ -328,7 +314,6 @@ const $ = (id) => document.getElementById(id);
 const thread = $("thread");
 const input = $("input");
 const modelSelect = $("modelSelect");
-const routeSelect = $("routeSelect");
 
 function save() {
   try {
@@ -795,16 +780,7 @@ async function loadModels() {
     const res = await fetch(API + "/models", { headers });
     if (!res.ok) return;
     const data = (await res.json()).data || [];
-    const toLabel = (m) => ({
-      id: m.id,
-      label:
-        (m.display_name || m.id) +
-        (m.requires_training_optin
-          ? m.premium_unlocked
-            ? "（解放済み）"
-            : "（要オプトイン）"
-          : ""),
-    });
+    const toLabel = (m) => ({ id: m.id, label: m.display_name || m.id });
     const chat = data
       .filter((m) => (m.endpoints || []).includes("chat/completions"))
       .map(toLabel);
@@ -1254,13 +1230,8 @@ $("composer").addEventListener("submit", async (e) => {
   e.preventDefault();
   const text = input.value.trim();
   if (!text && pendingAtts.length === 0) return;
-  // 行き先の振り分け（振り分け先へはAPIキー不要）
-  let det;
-  if (state.routeChoice && state.routeChoice !== "auto") {
-    det = { route: state.routeChoice, kind: "manual", reason: "行き先を手動で選択" };
-  } else {
-    det = detectRoute(text);
-  }
+  // 行き先の振り分け（自動のみ。振り分け先へはAPIキー不要）
+  const det = detectRoute(text);
   if (det.route !== "logfare") {
     input.value = "";
     addItem("user", text);
@@ -1299,21 +1270,6 @@ input.addEventListener("keydown", (e) => {
 
 modelSelect.addEventListener("change", () => {
   state.modelChoice.chat = modelSelect.value;
-  save();
-});
-
-routeSelect.addEventListener("change", () => {
-  state.routeChoice = routeSelect.value;
-  save();
-});
-
-$("clearBtn").addEventListener("click", () => {
-  state.ui[state.mode].length = 0;
-  if (state.history[state.mode]) state.history[state.mode].length = 0;
-  const t = activeThread();
-  if (t) { t.title = "新しいチャット"; t.updatedAt = Date.now(); }
-  renderThread();
-  renderSidebar();
   save();
 });
 
@@ -1384,7 +1340,6 @@ $("importFile").addEventListener("change", async () => {
     migrateProjects(state);
     linkActiveThreads();
     save();
-    routeSelect.value = state.routeChoice || "auto";
     fillModelSelect();
     renderThread();
     renderSidebar();
@@ -1447,7 +1402,6 @@ unifyState(state);
 migrateProjects(state);
 linkActiveThreads();
 updateKeyNotice();
-routeSelect.value = state.routeChoice || "auto";
 fillModelSelect();
 renderThread();
 renderSidebar();
