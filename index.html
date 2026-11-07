@@ -246,12 +246,12 @@ body { padding-left: 52px; }
   <form id="composer">
     <div id="attBar" hidden></div>
     <div class="composer-row">
-      <button id="attachBtn" type="button" class="ghost" title="ファイルや画像を添付（画像・テキストファイル）">📎</button>
+      <button id="attachBtn" type="button" class="ghost" title="ファイルや画像を添付（画像・テキスト・ZIP）">📎</button>
       <textarea id="input" rows="1" placeholder="メッセージを入力"></textarea>
       <select id="modelSelect" title="モデル"></select>
       <button id="sendBtn" type="submit" aria-label="送信">↑</button>
     </div>
-    <input type="file" id="fileInput" hidden multiple accept="image/*,.txt,.md,.csv,.tsv,.json,.js,.ts,.jsx,.tsx,.html,.htm,.css,.py,.xml,.svg,.log,.yaml,.yml,.toml">
+    <input type="file" id="fileInput" hidden multiple accept="image/*,.zip,.txt,.md,.csv,.tsv,.json,.js,.ts,.jsx,.tsx,.html,.htm,.css,.py,.xml,.svg,.log,.yaml,.yml,.toml">
   </form>
 </footer>
 
@@ -1190,19 +1190,79 @@ function downscaleImage(file) {
     img.src = url;
   });
 }
+/* ZIPの中身を取り出す（ブラウザ標準機能のみ。テキストファイルだけを返す） */
+function decodeTextBytes(bytes) {
+  try { return new TextDecoder("utf-8", { fatal: true }).decode(bytes); }
+  catch (_) { return new TextDecoder("shift-jis").decode(bytes); }
+}
+async function unzipEntries(file) {
+  const buf = new Uint8Array(await file.arrayBuffer());
+  const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  let eocd = -1;
+  const minPos = Math.max(0, buf.length - 65557);
+  for (let i = buf.length - 22; i >= minPos; i--) {
+    if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+  }
+  if (eocd < 0) throw new Error("ZIPとして読み込めませんでした: " + file.name);
+  const count = dv.getUint16(eocd + 10, true);
+  let off = dv.getUint32(eocd + 16, true);
+  const out = [];
+  for (let n = 0; n < count; n++) {
+    if (off + 46 > buf.length || dv.getUint32(off, true) !== 0x02014b50) break;
+    const flags = dv.getUint16(off + 8, true);
+    const method = dv.getUint16(off + 10, true);
+    const csize = dv.getUint32(off + 20, true);
+    const nlen = dv.getUint16(off + 28, true);
+    const elen = dv.getUint16(off + 30, true);
+    const clen = dv.getUint16(off + 32, true);
+    const lhoff = dv.getUint32(off + 42, true);
+    const nameBytes = buf.subarray(off + 46, off + 46 + nlen);
+    const name = (flags & 0x800) ? new TextDecoder("utf-8").decode(nameBytes) : new TextDecoder("shift-jis").decode(nameBytes);
+    off += 46 + nlen + elen + clen;
+    if (name.endsWith("/") || (flags & 1)) continue; // フォルダと暗号化ファイルは除く
+    const lnlen = dv.getUint16(lhoff + 26, true);
+    const lelen = dv.getUint16(lhoff + 28, true);
+    const dataOff = lhoff + 30 + lnlen + lelen;
+    const comp = buf.subarray(dataOff, dataOff + csize);
+    if (method === 0) {
+      out.push({ name, data: comp });
+    } else if (method === 8 && typeof DecompressionStream !== "undefined") {
+      const raw = await new Response(new Blob([comp]).stream().pipeThrough(new DecompressionStream("deflate-raw"))).arrayBuffer();
+      out.push({ name, data: new Uint8Array(raw) });
+    }
+  }
+  return out;
+}
+async function addZipFile(f) {
+  const entries = await unzipEntries(f);
+  let added = 0, skipped = 0;
+  for (const e of entries) {
+    if (!TEXT_EXTS.some((x) => e.name.toLowerCase().endsWith(x))) { skipped++; continue; }
+    if (pendingAtts.length >= 4) { attNotice("添付は1回に4つまでです"); break; }
+    let t = decodeTextBytes(e.data);
+    let truncated = false;
+    if (t.length > 100000) { t = t.slice(0, 100000); truncated = true; }
+    pendingAtts.push({ kind: "file", name: f.name + " / " + e.name, text: t, truncated });
+    added++;
+  }
+  if (!added) attNotice("ZIPの中に読み込めるテキストファイルがありませんでした: " + f.name);
+  else if (skipped) attNotice("ZIPから " + added + " 件を読み込みました（テキスト以外の " + skipped + " 件は除きました）");
+}
 async function addFiles(files) {
   for (const f of files) {
     if (pendingAtts.length >= 4) { attNotice("添付は1回に4つまでです"); break; }
     try {
       if (f.type.startsWith("image/")) {
         pendingAtts.push({ kind: "image", url: await downscaleImage(f), name: f.name });
+      } else if (f.name.toLowerCase().endsWith(".zip")) {
+        await addZipFile(f);
       } else if (isTextFile(f)) {
         let t = await f.text();
         let truncated = false;
         if (t.length > 100000) { t = t.slice(0, 100000); truncated = true; }
         pendingAtts.push({ kind: "file", name: f.name, text: t, truncated });
       } else {
-        attNotice("対応していないファイルです: " + f.name + "（画像とテキストファイルのみ添付できます）");
+        attNotice("対応していないファイルです: " + f.name + "（画像・テキスト・ZIPのみ添付できます）");
       }
     } catch (err) {
       attNotice(err.message || String(err));
