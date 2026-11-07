@@ -111,13 +111,32 @@ main#thread {
 .avatar { width: 30px; height: 30px; border-radius: 50%; flex: none; margin-top: 2px; background: var(--panel); }
 .msg img.gen { max-width: 100%; border-radius: 16px; display: block; margin-top: 6px; }
 .msg pre {
-  background: #1f1f22; color: #f2f2f2; padding: 12px; border-radius: 12px;
-  overflow-x: auto; white-space: pre; font-size: .82rem;
+  background: #1f1f22; color: #f2f2f2; padding: 12px; border-radius: 0 0 12px 12px;
+  white-space: pre-wrap; word-break: break-all; overflow-x: hidden; font-size: .82rem; margin: 0;
 }
-.msg .dl {
-  display: inline-block; margin: 6px 4px 6px 0; background: var(--text); color: var(--on-dark);
-  padding: 7px 14px; border-radius: 999px; font-size: .82rem; cursor: pointer; border: 0;
+.codeblock { border-radius: 12px; overflow: hidden; margin: 8px 0; border: 1px solid var(--border); }
+.code-head {
+  display: flex; justify-content: space-between; align-items: center;
+  background: #2b2b2e; color: #cfcfcf; padding: 5px 8px 5px 12px; font-size: .75rem;
 }
+.code-acts { display: flex; gap: 4px; }
+.code-acts button {
+  background: transparent; color: #cfcfcf; border: 0; padding: 4px 8px;
+  font-size: .75rem; border-radius: 8px; cursor: pointer;
+}
+.code-acts button:hover { background: rgba(255,255,255,.12); color: #fff; }
+#pvOverlay {
+  position: fixed; inset: 0; z-index: 60; background: var(--bg);
+  display: flex; flex-direction: column;
+}
+#pvOverlay[hidden] { display: none; }
+.pv-bar {
+  display: flex; align-items: center; gap: 6px; padding: 8px 12px;
+  border-bottom: 1px solid var(--border); font-size: .9rem;
+}
+.pv-bar .t { flex: 1; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pv-bar button { padding: 6px 10px; }
+#pvFrame { flex: 1; border: 0; width: 100%; background: #fff; }
 .msg code { background: var(--code-bg); padding: 1px 5px; border-radius: 5px; }
 .msg pre code { background: transparent; padding: 0; }
 footer { background: var(--bg); padding: 8px 16px calc(10px + env(safe-area-inset-bottom)); max-width: 800px; width: 100%; margin: 0 auto; }
@@ -254,6 +273,16 @@ body { padding-left: 52px; }
     <input type="file" id="fileInput" hidden multiple accept="image/*,.zip,.txt,.md,.csv,.tsv,.json,.js,.ts,.jsx,.tsx,.html,.htm,.css,.py,.xml,.svg,.log,.yaml,.yml,.toml">
   </form>
 </footer>
+
+<div id="pvOverlay" hidden>
+  <div class="pv-bar">
+    <button id="pvClose" class="ghost" type="button">✕</button>
+    <span class="t">プレビュー</span>
+    <button id="pvReload" class="ghost" type="button" title="再読み込み">↻</button>
+    <button id="pvOpen" class="ghost" type="button" title="別タブで開く">↗ 別タブで開く</button>
+  </div>
+  <iframe id="pvFrame" title="プレビュー" sandbox="allow-scripts allow-modals allow-popups"></iframe>
+</div>
 
 <dialog id="settings">
   <form method="dialog" class="settings-box">
@@ -659,23 +688,87 @@ function renderRich(container, text) {
   for (let i = 0; i < parts.length; i++) {
     if (i % 3 === 2) {
       const code = parts[i];
-      const pre = document.createElement("pre");
-      const codeEl = document.createElement("code");
-      codeEl.textContent = code;
-      pre.appendChild(codeEl);
-      container.appendChild(pre);
-      const dl = document.createElement("button");
-      dl.type = "button";
-      dl.className = "dl";
-      dl.textContent = "⬇ このコードをファイルとして保存";
-      dl.addEventListener("click", () => downloadCode(code));
-      container.appendChild(dl);
+      const lang = parts[i - 1] || "";
+      container.appendChild(buildCodeBlock(code, lang));
     } else if (i % 3 === 0) {
       const span = document.createElement("span");
       span.textContent = parts[i];
       container.appendChild(span);
     }
   }
+}
+
+/* Claude風コードブロック：上部バーに言語名と操作（コピー／プレビュー／保存） */
+function buildCodeBlock(code, lang) {
+  const wrap = document.createElement("div");
+  wrap.className = "codeblock";
+  const head = document.createElement("div");
+  head.className = "code-head";
+  const lab = document.createElement("span");
+  lab.textContent = lang ? lang.toUpperCase() : "コード";
+  head.appendChild(lab);
+  const acts = document.createElement("span");
+  acts.className = "code-acts";
+  const cp = document.createElement("button");
+  cp.type = "button";
+  cp.textContent = "📋 コピー";
+  cp.addEventListener("click", async () => {
+    const ok = await copyText(code);
+    cp.textContent = ok ? "✓ コピーしました" : "コピーできませんでした";
+    setTimeout(() => { cp.textContent = "📋 コピー"; }, 1600);
+  });
+  acts.appendChild(cp);
+  if (/<\s*(!doctype|html)/i.test(code)) {
+    const pv = document.createElement("button");
+    pv.type = "button";
+    pv.textContent = "▶ プレビュー";
+    pv.addEventListener("click", () => openPreview(code));
+    acts.appendChild(pv);
+  }
+  const dl = document.createElement("button");
+  dl.type = "button";
+  dl.textContent = "⬇ 保存";
+  dl.addEventListener("click", () => downloadCode(code));
+  acts.appendChild(dl);
+  head.appendChild(acts);
+  wrap.appendChild(head);
+  const pre = document.createElement("pre");
+  const codeEl = document.createElement("code");
+  codeEl.textContent = code;
+  pre.appendChild(codeEl);
+  wrap.appendChild(pre);
+  return wrap;
+}
+
+async function copyText(t) {
+  try { await navigator.clipboard.writeText(t); return true; }
+  catch (_) {
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = t;
+      ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand("copy");
+      ta.remove();
+      return ok;
+    } catch (_) { return false; }
+  }
+}
+
+/* ---------- 簡易ブラウザ（HTMLプレビュー） ----------
+   sandboxは allow-scripts のみ（allow-same-origin を付けない）ので、
+   プレビュー内のアプリから本体の保存データ（APIキー等）には触れない。 */
+let pvCode = "";
+function openPreview(code) {
+  pvCode = code;
+  $("pvFrame").srcdoc = code;
+  $("pvOverlay").hidden = false;
+}
+function closePreview() {
+  $("pvOverlay").hidden = true;
+  $("pvFrame").srcdoc = "";
+  pvCode = "";
 }
 
 function downloadCode(code) {
@@ -1382,6 +1475,17 @@ input.addEventListener("keydown", (e) => {
 modelSelect.addEventListener("change", () => {
   state.modelChoice.chat = modelSelect.value;
   save();
+});
+
+$("pvClose").addEventListener("click", closePreview);
+$("pvReload").addEventListener("click", () => {
+  const f = $("pvFrame");
+  f.srcdoc = "";
+  requestAnimationFrame(() => { f.srcdoc = pvCode; });
+});
+$("pvOpen").addEventListener("click", () => {
+  const blob = new Blob([pvCode], { type: "text/html;charset=utf-8" });
+  window.open(URL.createObjectURL(blob), "_blank");
 });
 
 $("settingsBtn").addEventListener("click", () => {
