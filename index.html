@@ -82,12 +82,14 @@ button {
 }
 button.ghost { background: transparent; border: 1px solid var(--border); color: var(--text); }
 button:disabled { opacity: .45; cursor: default; }
-.modelbar {
-  display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
-  padding: 8px 16px 0; font-size: .82rem; color: var(--muted);
-  max-width: 800px; width: 100%; margin: 0 auto;
+.composer-bar { display: flex; align-items: center; gap: 8px; padding: 2px 2px 0; width: 100%; }
+.composer-bar .spacer { flex: 1; }
+.composer-bar select {
+  border: 0; background: transparent; color: var(--muted); font-size: .8rem;
+  padding: 4px 2px; border-radius: 8px; max-width: 36vw; text-overflow: ellipsis;
 }
-.modelbar select { border-radius: 999px; padding: 4px 8px; }
+#modelSelect { max-width: 42vw; }
+#clearBtn { font-size: .78rem; padding: 4px 10px; color: var(--muted); }
 select, input, textarea {
   font: inherit; border: 1px solid var(--border); border-radius: 12px; padding: 8px 10px; background: var(--bg); color: var(--text);
 }
@@ -197,20 +199,6 @@ dialog { border: 0; border-radius: 20px; padding: 0; max-width: 480px; width: 92
 </aside>
 <div id="scrim" hidden></div>
 
-<div class="modelbar">
-  <label>モデル <select id="modelSelect"></select></label>
-  <label>行き先
-    <select id="routeSelect">
-      <option value="auto">自動（振り分け）</option>
-      <option value="logfare">ハチワレで処理</option>
-      <option value="claude">Claude（仕上げ）へ</option>
-      <option value="dev">開発（OpenCode／ロク）へ</option>
-      <option value="roku">ロク（メール・Mac・調べもの）へ</option>
-    </select>
-  </label>
-  <button id="clearBtn" class="ghost" type="button">会話を消す</button>
-</div>
-
 <p id="keyNotice" class="notice" hidden>APIキーが未設定です。「⚙️ 設定」からキーを入れてください。</p>
 <p id="autoNotice" class="notice" hidden></p>
 <p id="projBar" class="notice" hidden></p>
@@ -224,6 +212,18 @@ dialog { border: 0; border-radius: 20px; padding: 0; max-width: 480px; width: 92
       <button id="attachBtn" type="button" class="ghost" title="ファイルや画像を添付（画像・テキストファイル）">📎</button>
       <textarea id="input" rows="1" placeholder="メッセージを入力"></textarea>
       <button id="sendBtn" type="submit" aria-label="送信">↑</button>
+    </div>
+    <div class="composer-bar">
+      <button id="clearBtn" class="ghost" type="button">会話を消す</button>
+      <span class="spacer"></span>
+      <select id="modelSelect" title="モデル"></select>
+      <select id="routeSelect" title="行き先">
+        <option value="auto">自動（振り分け）</option>
+        <option value="logfare">ハチワレで処理</option>
+        <option value="claude">Claude（仕上げ）へ</option>
+        <option value="dev">開発（OpenCode／ロク）へ</option>
+        <option value="roku">ロク（メール・Mac・調べもの）へ</option>
+      </select>
     </div>
     <input type="file" id="fileInput" hidden multiple accept="image/*,.txt,.md,.csv,.tsv,.json,.js,.ts,.jsx,.tsx,.html,.htm,.css,.py,.xml,.svg,.log,.yaml,.yml,.toml">
   </form>
