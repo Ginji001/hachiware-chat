@@ -14,48 +14,41 @@
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="manifest" href="manifest.webmanifest">
 <style>
+/* ===== ハチワレ チャット v2 =====
+   画面は4つだけ: ヘッダー / サイドバー / 会話 / 入力欄（＋プレビューとダイアログ）。
+   色は変数に集約し、ダークモードはOS設定に追従する。 */
 :root {
   color-scheme: light dark;
-  --border: #e7e5e0;
+  --bg: #ffffff;
   --panel: #f7f7f5;
   --text: #1d1d1f;
   --muted: #6e6e73;
-  --bg: #ffffff;
+  --border: #e7e5e0;
+  --hover: #eceae5;
+  --active: #e7e5df;
   --bubble: #eeece7;
   --code-bg: #f2f1ed;
-  --composer-border: #e3e1dc;
   --notice-bg: #fff8e1;
   --notice-border: #f0dfa0;
   --error-bg: #fdecec;
   --error-border: #efc3c3;
-  --hover: #eceae5;
-  --active: #e7e5df;
-  --chip-border: #ddd9d2;
-  --on-dark: #ffffff;
-  --projbar-bg: #eef2f7;
-  --projbar-border: #cfdce8;
   --shadow: rgba(0,0,0,.05);
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --border: #3a3a3a;
+    --bg: #1f1f1f;
     --panel: #292929;
     --text: #ececec;
     --muted: #a3a3a3;
-    --bg: #1f1f1f;
+    --border: #3a3a3a;
+    --hover: #333333;
+    --active: #3a3a3a;
     --bubble: #333333;
     --code-bg: #2e2e2e;
-    --composer-border: #3d3d3d;
     --notice-bg: #38311c;
     --notice-border: #6b5d2a;
     --error-bg: #402727;
     --error-border: #6e3a3a;
-    --hover: #333333;
-    --active: #3a3a3a;
-    --chip-border: #444444;
-    --on-dark: #1f1f1f;
-    --projbar-bg: #26303a;
-    --projbar-border: #3d4c5c;
     --shadow: rgba(0,0,0,.45);
   }
 }
@@ -67,33 +60,72 @@ body {
   background: var(--bg); color: var(--text);
   -webkit-font-smoothing: antialiased;
 }
-header {
-  display: flex; justify-content: space-between; align-items: center;
-  background: var(--bg); color: var(--text); padding: 10px 16px;
-}
-.brand { display: flex; align-items: center; gap: 10px; font-weight: 600; }
-.brand .sub { color: var(--muted); font-weight: 400; font-size: .8rem; }
-#brandIcon { width: 32px; height: 32px; border-radius: 50%; background: var(--panel); }
-button {
-  font: inherit; cursor: pointer; border: 0; border-radius: 999px;
-  background: var(--text); color: var(--on-dark); padding: 9px 16px;
-}
+button { font: inherit; cursor: pointer; border: 0; border-radius: 999px; background: var(--text); color: var(--bg); padding: 9px 16px; }
 button.ghost { background: transparent; border: 1px solid var(--border); color: var(--text); }
 button:disabled { opacity: .45; cursor: default; }
-#modelSelect {
-  border: 0; background: transparent; color: var(--muted); font-size: .82rem;
-  padding: 4px 2px; border-radius: 8px; max-width: 30vw; flex: none;
-  text-overflow: ellipsis; cursor: pointer;
+select, input, textarea { font: inherit; color: var(--text); }
+img { -webkit-user-drag: none; }
+
+/* ===== ヘッダー ===== */
+header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 8px 12px; min-height: 52px;
 }
-#settingsBtn { border: 0; font-size: 1.05rem; padding: 7px 10px; }
-select, input, textarea {
-  font: inherit; border: 1px solid var(--border); border-radius: 12px; padding: 8px 10px; background: var(--bg); color: var(--text);
+header .left { display: flex; align-items: center; gap: 4px; }
+#sideBtn { border: 0; background: transparent; color: var(--text); font-size: 1.15rem; padding: 7px 9px; }
+#sideBtn:hover { background: var(--hover); }
+#brandIcon { width: 32px; height: 32px; border-radius: 50%; background: var(--panel); display: block; }
+#settingsBtn { border: 0; background: transparent; font-size: 1.05rem; padding: 7px 10px; }
+#settingsBtn:hover { background: var(--hover); }
+
+/* ===== サイドバー ===== */
+#sidebar {
+  position: fixed; top: 0; left: 0; bottom: 0; z-index: 40;
+  width: min(300px, 85vw); background: var(--panel); border-right: 1px solid var(--border);
+  transform: translateX(-105%); transition: transform .2s;
+  display: flex; flex-direction: column; padding: 14px 12px; gap: 10px;
 }
+#sidebar.open { transform: none; box-shadow: 2px 0 16px rgba(0,0,0,.12); }
+#scrim { position: fixed; inset: 0; background: rgba(0,0,0,.3); z-index: 39; }
+.side-row {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  background: transparent; color: var(--text); text-align: left;
+  border-radius: 12px; padding: 10px 12px; font-size: .95rem;
+}
+.side-row:hover { background: var(--hover); }
+#searchInput {
+  width: 100%; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--bg); padding: 8px 10px; font-size: .9rem;
+}
+.side-sec {
+  display: flex; justify-content: space-between; align-items: center;
+  font-weight: 600; font-size: .88rem; padding: 0 4px; margin-top: 4px;
+}
+.side-sec button { padding: 4px 10px; }
+#projectList { display: flex; flex-direction: column; gap: 4px; }
+#convList { overflow-y: auto; display: flex; flex-direction: column; gap: 4px; flex: 1; min-height: 0; }
+.conv {
+  padding: 10px 12px; border-radius: 12px; cursor: pointer;
+  display: flex; gap: 8px; align-items: center; font-size: .92rem;
+}
+.conv:hover { background: var(--hover); }
+.conv.active { background: var(--active); font-weight: 600; }
+.conv .t { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conv .d { color: var(--muted); font-size: .75rem; white-space: nowrap; }
+.conv .del, .conv .edit { background: transparent; color: var(--muted); padding: 2px 8px; }
+.conv .del:hover { color: #c0392b; }
+.side-foot { border-top: 1px solid var(--border); padding-top: 10px; display: grid; gap: 4px; }
+.profile { display: flex; align-items: center; gap: 10px; padding: 8px 12px; font-size: .92rem; }
+.profile img { width: 28px; height: 28px; border-radius: 50%; background: var(--bg); }
+
+/* ===== お知らせ（キー未設定・モデル自動切替・プロジェクト名） ===== */
 .notice {
   max-width: 800px; width: calc(100% - 28px); margin: 8px auto 0;
   background: var(--notice-bg); border: 1px solid var(--notice-border);
   padding: 10px 14px; border-radius: 12px; font-size: .88rem;
 }
+
+/* ===== 会話 ===== */
 main#thread {
   flex: 1; overflow-y: auto; padding: 18px 16px 20px;
   display: flex; flex-direction: column; gap: 18px;
@@ -101,155 +133,117 @@ main#thread {
 }
 .msg { line-height: 1.75; font-size: .95rem; white-space: pre-wrap; word-break: break-word; }
 .msg.user {
-  align-self: flex-end; background: var(--bubble); color: var(--text);
+  align-self: flex-end; background: var(--bubble);
   padding: 10px 16px; border-radius: 20px; border-bottom-right-radius: 6px; max-width: 85%;
 }
 .row-wrap { display: flex; gap: 10px; align-items: flex-start; }
-.row-wrap .msg { flex: 1; }
+.row-wrap .msg { flex: 1; min-width: 0; }
 .msg.assistant { background: transparent; padding: 2px 0; }
 .msg.error { background: var(--error-bg); border: 1px solid var(--error-border); padding: 10px 14px; border-radius: 14px; }
 .avatar { width: 30px; height: 30px; border-radius: 50%; flex: none; margin-top: 2px; background: var(--panel); }
+.typing { opacity: .55; }
 .msg img.gen { max-width: 100%; border-radius: 16px; display: block; margin-top: 6px; }
-.msg pre {
-  background: #1f1f22; color: #f2f2f2; padding: 12px; border-radius: 0 0 12px 12px;
-  white-space: pre-wrap; word-break: break-all; overflow-x: hidden; font-size: .82rem; margin: 0;
+.msg code { background: var(--code-bg); padding: 1px 5px; border-radius: 5px; }
+.att-wrap { margin-bottom: 6px; }
+.att-img { max-width: 240px; max-height: 240px; border-radius: 12px; border: 1px solid var(--border); display: block; }
+.att-chip { display: inline-block; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 3px 8px; font-size: .82rem; margin: 0 6px 4px 0; }
+.msg .dl {
+  display: inline-block; margin: 6px 4px 6px 0; background: var(--text); color: var(--bg);
+  padding: 7px 14px; border-radius: 999px; font-size: .82rem; cursor: pointer; border: 0;
 }
+
+/* コードブロック（Claude風：上部バー＋折り返し、横スクロールなし） */
 .codeblock { border-radius: 12px; overflow: hidden; margin: 8px 0; border: 1px solid var(--border); }
 .code-head {
   display: flex; justify-content: space-between; align-items: center;
   background: #2b2b2e; color: #cfcfcf; padding: 5px 8px 5px 12px; font-size: .75rem;
 }
 .code-acts { display: flex; gap: 4px; }
-.code-acts button {
-  background: transparent; color: #cfcfcf; border: 0; padding: 4px 8px;
-  font-size: .75rem; border-radius: 8px; cursor: pointer;
-}
+.code-acts button { background: transparent; color: #cfcfcf; border: 0; padding: 4px 8px; font-size: .75rem; border-radius: 8px; }
 .code-acts button:hover { background: rgba(255,255,255,.12); color: #fff; }
-#pvOverlay {
-  position: fixed; inset: 0; z-index: 60; background: var(--bg);
-  display: flex; flex-direction: column;
+.codeblock pre {
+  background: #1f1f22; color: #f2f2f2; padding: 12px; margin: 0;
+  white-space: pre-wrap; word-break: break-all; overflow-x: hidden; font-size: .82rem; line-height: 1.6;
 }
-#pvOverlay[hidden] { display: none; }
-.pv-bar {
-  display: flex; align-items: center; gap: 6px; padding: 8px 12px;
-  border-bottom: 1px solid var(--border); font-size: .9rem;
-}
-.pv-bar .t { flex: 1; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pv-bar button { padding: 6px 10px; }
-#pvFrame { flex: 1; border: 0; width: 100%; background: #fff; }
-.msg code { background: var(--code-bg); padding: 1px 5px; border-radius: 5px; }
-.msg pre code { background: transparent; padding: 0; }
-footer { background: var(--bg); padding: 8px 16px calc(10px + env(safe-area-inset-bottom)); max-width: 800px; width: 100%; margin: 0 auto; }
+.codeblock pre code { background: transparent; padding: 0; }
+
+/* ===== 入力欄 ===== */
+footer { padding: 8px 16px calc(10px + env(safe-area-inset-bottom)); max-width: 800px; width: 100%; margin: 0 auto; }
 #composer {
-  display: flex; gap: 8px; align-items: flex-end;
-  background: var(--bg); border: 1px solid var(--composer-border); border-radius: 24px;
-  padding: 4px 6px 4px 10px; box-shadow: 0 2px 10px var(--shadow);
+  display: flex; flex-direction: column;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 24px;
+  padding: 5px 6px 5px 10px; box-shadow: 0 2px 10px var(--shadow);
 }
-#composer textarea { flex: 1; resize: none; border: 0; outline: none; padding: 3px 2px; background: transparent; font-size: 1rem; line-height: 1.4; max-height: 140px; overflow-y: auto; }
-#sendBtn { width: 34px; height: 34px; border-radius: 50%; padding: 0; font-size: 1rem; flex: none; display: grid; place-items: center; }
-.hint { color: var(--muted); font-size: .78rem; max-width: 800px; margin: 8px auto 0; text-align: center; }
-dialog { border: 0; border-radius: 20px; padding: 0; max-width: 480px; width: 92%; box-shadow: 0 12px 40px rgba(0,0,0,.18); background: var(--bg); color: var(--text); }
-.settings-box { padding: 22px; display: grid; gap: 12px; }
-.settings-box input { width: 100%; }
-.settings-box .row { display: flex; gap: 8px; justify-content: flex-end; }
-.settings-box .hint { text-align: left; margin: 0; }
-.typing { opacity: .55; }
-#rail {
-  position: fixed; left: 0; top: 0; bottom: 0; width: 52px; z-index: 41;
-  background: var(--panel); border-right: 1px solid var(--border);
-  display: flex; flex-direction: column; align-items: center; padding: 10px 0; gap: 6px;
-}
-#rail button {
-  background: transparent; color: var(--text); width: 38px; height: 38px; padding: 0;
-  border-radius: 10px; font-size: 1.05rem; display: grid; place-items: center;
-}
-#rail button:hover { background: var(--hover); }
-#rail .sp { flex: 1; }
-#rail img { width: 30px; height: 30px; border-radius: 50%; cursor: pointer; background: var(--panel); }
-body { padding-left: 52px; }
-#sidebar {
-  position: fixed; top: 0; left: 52px; bottom: 0; width: min(300px, 85vw);
-  background: var(--panel); border-right: 1px solid var(--border); z-index: 40;
-  transform: translateX(-105%); transition: transform .2s;
-  display: flex; flex-direction: column; padding: 16px 12px; gap: 12px;
-}
-#sidebar.open { transform: none; box-shadow: 2px 0 16px rgba(0,0,0,.12); }
-#sidebar .side-head { display: flex; justify-content: space-between; align-items: center; font-weight: 600; padding: 0 4px; }
-.side-item {
-  background: transparent; color: var(--text); text-align: left; width: 100%;
-  border-radius: 12px; padding: 10px 12px; font-size: .95rem;
-  display: flex; gap: 10px; align-items: center;
-}
-.side-item:hover { background: var(--hover); }
-#searchInput { width: 100%; border-radius: 10px; }
-.side-foot { margin-top: auto; border-top: 1px solid var(--border); padding-top: 10px; display: grid; gap: 4px; }
-.profile { display: flex; align-items: center; gap: 10px; padding: 8px 12px; font-size: .92rem; }
-.profile img { width: 28px; height: 28px; border-radius: 50%; background: var(--panel); }
-#convList { overflow-y: auto; display: flex; flex-direction: column; gap: 4px; flex: 1; min-height: 0; }
-.conv { padding: 10px 12px; border-radius: 12px; cursor: pointer; display: flex; gap: 8px; align-items: center; font-size: .92rem; }
-.conv:hover { background: var(--hover); }
-.conv.active { background: var(--active); font-weight: 600; }
-.conv .t { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.conv .d { color: var(--muted); font-size: .75rem; white-space: nowrap; }
-.conv .del { background: transparent; color: var(--muted); padding: 2px 8px; }
-.conv .del:hover { color: #c0392b; }
-#scrim { position: fixed; inset: 0; background: rgba(0,0,0,.3); z-index: 39; }
-.side-sec { display: flex; justify-content: space-between; align-items: center; font-weight: 600; padding: 0 4px; margin-top: 6px; }
-.side-sec button { padding: 4px 10px; }
-#projectList { display: flex; flex-direction: column; gap: 4px; }
-.conv .edit { background: transparent; color: var(--muted); padding: 2px 8px; }
-#projInstr { width: 100%; min-height: 180px; resize: vertical; line-height: 1.6; }
-#composer { flex-direction: column; align-items: stretch; }
-.composer-row { display: flex; gap: 6px; align-items: flex-end; width: 100%; min-height: 36px; }
-.composer-row #attachBtn, .composer-row #sendBtn { align-self: flex-end; margin-bottom: 1px; }
-.composer-row #modelSelect { align-self: flex-end; margin-bottom: 5px; }
 #attBar { display: flex; gap: 8px; flex-wrap: wrap; padding: 2px 2px 8px; }
 .att-item { display: flex; align-items: center; gap: 6px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 4px 8px; font-size: .85rem; }
 .att-item img { width: 36px; height: 36px; object-fit: cover; border-radius: 6px; }
 .att-item button { padding: 2px 7px; background: transparent; color: var(--muted); }
-#attachBtn { font-size: 1.05rem; width: 34px; height: 34px; padding: 0; border: 0; border-radius: 50%; color: var(--muted); display: grid; place-items: center; flex: none; }
-#attachBtn:disabled { opacity: .35; }
-.att-wrap { margin-bottom: 6px; }
-.att-img { max-width: 240px; max-height: 240px; border-radius: 12px; border: 1px solid var(--border); display: block; }
-.att-chip { display: inline-block; background: var(--bg); border: 1px solid var(--chip-border); border-radius: 8px; padding: 3px 8px; font-size: .82rem; margin: 0 6px 4px 0; }
-#projBar { background: var(--projbar-bg); border-color: var(--projbar-border); }
+.composer-row { display: flex; gap: 6px; align-items: flex-end; width: 100%; min-height: 36px; }
+#attachBtn {
+  font-size: 1.05rem; width: 34px; height: 34px; padding: 0; border: 0; border-radius: 50%;
+  background: transparent; color: var(--muted); display: grid; place-items: center; flex: none; margin-bottom: 1px;
+}
+#composer textarea {
+  flex: 1; resize: none; border: 0; outline: none; padding: 3px 2px; background: transparent;
+  font-size: 1rem; line-height: 1.4; max-height: 140px; overflow-y: auto; min-width: 0;
+}
+#modelSelect {
+  border: 0; background: transparent; color: var(--muted); font-size: .82rem;
+  padding: 4px 2px; border-radius: 8px; max-width: 30vw; flex: none;
+  text-overflow: ellipsis; cursor: pointer; align-self: flex-end; margin-bottom: 5px;
+}
+#sendBtn {
+  width: 34px; height: 34px; border-radius: 50%; padding: 0; font-size: 1rem; flex: none;
+  display: grid; place-items: center; margin-bottom: 1px;
+}
+
+/* ===== 簡易ブラウザ（プレビュー） ===== */
+#pvOverlay { position: fixed; inset: 0; z-index: 60; background: var(--bg); display: flex; flex-direction: column; }
+#pvOverlay[hidden] { display: none; }
+.pv-bar { display: flex; align-items: center; gap: 6px; padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: .9rem; }
+.pv-bar .t { flex: 1; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pv-bar button { padding: 6px 10px; }
+#pvFrame { flex: 1; border: 0; width: 100%; background: #fff; }
+
+/* ===== ダイアログ ===== */
+dialog { border: 0; border-radius: 20px; padding: 0; max-width: 480px; width: 92%; box-shadow: 0 12px 40px rgba(0,0,0,.18); background: var(--bg); color: var(--text); }
+.settings-box { padding: 22px; display: grid; gap: 12px; }
+.settings-box input[type="password"], .settings-box input[type="text"] { width: 100%; border: 1px solid var(--border); border-radius: 12px; padding: 8px 10px; background: var(--bg); }
+.settings-box .row { display: flex; gap: 8px; justify-content: flex-end; align-items: center; }
+.hint { color: var(--muted); font-size: .78rem; margin: 0; }
 .danger { color: #c0392b !important; border-color: #e5b4b4 !important; }
+#projInstr { width: 100%; min-height: 180px; resize: vertical; line-height: 1.6; border: 1px solid var(--border); border-radius: 12px; padding: 8px 10px; background: var(--bg); }
+
+/* ===== 広い画面：サイドバー常時表示 ===== */
 @media (min-width: 1024px) {
   body { padding-left: 300px; }
-  #rail { display: none; }
-  #sidebar { transform: none; width: 300px; left: 0; }
-  #sideCloseBtn { display: none; }
+  #sidebar { transform: none; width: 300px; }
+  #sideBtn, #sideCloseBtn { display: none; }
   #scrim { display: none !important; }
 }
 </style>
 </head>
 <body>
 <header>
-  <div class="brand"><img id="brandIcon" src="icon-512.png" alt=""></div>
-  <button id="settingsBtn" class="ghost" type="button" aria-label="設定" title="設定">⚙️</button>
+  <div class="left">
+    <button id="sideBtn" type="button" aria-label="会話リスト">☰</button>
+    <img id="brandIcon" src="icon-512.png" alt="">
+  </div>
+  <button id="settingsBtn" type="button" aria-label="設定" title="設定">⚙️</button>
 </header>
 
-<nav id="rail" aria-label="ショートカット">
-  <button id="railMenu" type="button" title="サイドバーを開く・閉じる">☰</button>
-  <button id="railNew" type="button" title="新しいチャット">✏️</button>
-  <button id="railSearch" type="button" title="会話を検索">🔍</button>
-  <button id="railProj" type="button" title="プロジェクト">📁</button>
-  <span class="sp"></span>
-  <button id="railSettings" type="button" title="設定">⚙️</button>
-  <img id="railAvatar" src="icon-512.png" alt="ハチワレ" title="サイドバーを開く">
-</nav>
-
 <aside id="sidebar" aria-label="会話リスト">
-  <div class="side-head"><span></span><button id="sideCloseBtn" class="ghost" type="button">✕</button></div>
-  <button id="newChatBtn" class="side-item" type="button">✏️ 新しいチャット</button>
-  <button id="searchBtn" class="side-item" type="button">🔍 会話を検索</button>
-  <input id="searchInput" type="search" placeholder="会話を検索" hidden>
+  <div style="display:flex;justify-content:flex-end">
+    <button id="sideCloseBtn" class="ghost" type="button" style="padding:4px 10px">✕</button>
+  </div>
+  <button id="newChatBtn" class="side-row" type="button">✏️ 新しいチャット</button>
+  <input id="searchInput" type="search" placeholder="🔍 会話を検索">
   <div class="side-sec"><span>プロジェクト</span><button id="newProjectBtn" class="ghost" type="button">＋ 追加</button></div>
   <div id="projectList"></div>
   <div class="side-sec"><span id="convHead">会話</span></div>
   <div id="convList"></div>
   <div class="side-foot">
-    <button id="sideSettingsBtn" class="side-item" type="button">⚙️ 設定</button>
+    <button id="sideSettingsBtn" class="side-row" type="button">⚙️ 設定</button>
     <div class="profile"><img src="icon-512.png" alt="">ハチワレ</div>
   </div>
 </aside>
@@ -265,7 +259,7 @@ body { padding-left: 52px; }
   <form id="composer">
     <div id="attBar" hidden></div>
     <div class="composer-row">
-      <button id="attachBtn" type="button" class="ghost" title="ファイルや画像を添付（画像・テキスト・ZIP）">📎</button>
+      <button id="attachBtn" type="button" title="ファイルや画像を添付（画像・テキスト・ZIP）">📎</button>
       <textarea id="input" rows="1" placeholder="メッセージを入力"></textarea>
       <select id="modelSelect" title="モデル"></select>
       <button id="sendBtn" type="submit" aria-label="送信">↑</button>
@@ -286,7 +280,7 @@ body { padding-left: 52px; }
 
 <dialog id="settings">
   <form method="dialog" class="settings-box">
-    <h2>設定</h2>
+    <h2 style="margin:0">設定</h2>
     <label>Logfare APIキー
       <input id="apiKeyInput" type="password" autocomplete="off" placeholder="Logfareで発行されたキー">
     </label>
@@ -329,10 +323,11 @@ body { padding-left: 52px; }
 </dialog>
 
 <script>
-// ハチワレ チャット（Logfare版）
+// ハチワレ チャット v2（Logfare版）
 // - チャット / アプリ作成: POST https://logfare.ai/v1/chat/completions（ストリーミング）
 // - 画像: POST https://logfare.ai/v1/images/generations（FLUX系モデル）
 // - APIキーはこの端末の localStorage にだけ保存し、Logfare以外へは送りません。
+// - 保存形式は v1 と同一（LS_KEY と state の形は変えない＝過去の会話・設定・キーをそのまま引き継ぐ）。
 "use strict";
 
 const API = "https://logfare.ai/v1";
@@ -360,6 +355,7 @@ const SYSTEM_PROMPT =
   "あなたは親切な日本語アシスタントです。簡潔で正確に答えてください。" +
   "アプリやPWA、ツールを作ってほしいと頼まれたら、日本語で短く説明したあと、そのままブラウザで動く単一HTMLファイル全体（CSSとJavaScript込み）を1つのコードブロックで出力してください。データ保存が必要ならlocalStorageを使ってください。";
 
+/* ---------- 状態 ---------- */
 let models = structuredClone(FALLBACK_MODELS);
 let state = {
   mode: "chat",
@@ -373,7 +369,6 @@ let state = {
   ui: { chat: [], app: [], image: [] },
   history: { chat: [], app: [] },
 };
-
 try {
   const saved = JSON.parse(localStorage.getItem(LS_KEY) || "null");
   if (saved && saved.ui && saved.history) state = Object.assign(state, saved);
@@ -388,7 +383,7 @@ function save() {
   try {
     const copy = structuredClone(state);
     for (const m of ["chat", "app", "image"]) {
-      copy.ui[m] = copy.ui[m].map((it) =>
+      copy.ui[m] = (copy.ui[m] || []).map((it) =>
         it.imgUrl && it.imgUrl.startsWith("data:") && it.imgUrl.length > 200000
           ? { ...it, imgUrl: null, text: (it.text || "") + "\n（画像は端末に保存されませんでした）" }
           : it
@@ -398,9 +393,12 @@ function save() {
   } catch (_) { /* 容量超過時は保存を諦める */ }
 }
 
-/* ---------- 会話リスト（サイドチャット風） ----------
-   state.ui[mode] / state.history[mode] は「今開いている会話」の置き場として従来どおり使い、
-   convs[mode].list に全会話を持つ。開いている会話は参照を共有させる（linkActiveThreads）。 */
+function getKey() { return (state.apiKey || "").trim(); }
+function updateKeyNotice() { $("keyNotice").hidden = !!getKey(); }
+
+/* ---------- 会話（スレッド）管理 ----------
+   state.ui.chat / state.history.chat は「今開いている会話」の置き場で、
+   convs.chat.list に全会話を持つ。開いている会話とは参照を共有する（linkActiveThreads）。 */
 function genThreadId() {
   return "c" + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36);
 }
@@ -420,8 +418,7 @@ function migrateConvs(st) {
   }
   return st;
 }
-/* モード廃止に伴う統合（1回だけ）: アプリ作成モードの会話をチャットへ移し、
-   画像モードの履歴は「画像の履歴」という会話にする。会話の中身は消さない。 */
+/* 旧モード（chat/app/image）時代のデータを単一チャットへ統合する（1回だけ・中身は消さない） */
 function unifyState(st) {
   if (st.unified) return st;
   const chat = st.convs && st.convs.chat;
@@ -453,16 +450,16 @@ function unifyState(st) {
   return st;
 }
 function linkActiveThreads() {
-  const c = state.convs.chat;
-  if (!c) return;
+  const c = state.convs && state.convs.chat;
+  if (!c || !c.list.length) return;
   const t = c.list.find((x) => x.id === c.activeId) || c.list[0];
   c.activeId = t.id;
   t.ui = state.ui.chat;
   t.history = state.history.chat;
 }
 function activeThread() {
-  if (!state.convs || !state.convs.chat) return null;
-  const c = state.convs.chat;
+  const c = state.convs && state.convs.chat;
+  if (!c) return null;
   return c.list.find((x) => x.id === c.activeId) || null;
 }
 function touchThread(userText) {
@@ -475,59 +472,18 @@ function touchThread(userText) {
   renderSidebar();
 }
 function switchThread(id) {
-  const c = state.convs[state.mode];
+  const c = state.convs.chat;
   const t = c.list.find((x) => x.id === id);
   if (!t) return;
   c.activeId = id;
-  state.ui[state.mode] = t.ui;
-  state.history[state.mode] = t.history;
+  state.ui.chat = t.ui;
+  state.history.chat = t.history;
   save();
   renderThread();
   renderSidebar();
 }
-let searchQuery = "";
-function renderSidebar() {
-  const listEl = $("convList");
-  if (!listEl) return;
-  renderProjects();
-  const pr = state.projectFilter && state.projectFilter !== "all" && state.projectFilter !== "none"
-    ? projectById(state.projectFilter) : null;
-  $("convHead").textContent = "会話" + (pr ? "（" + pr.name + "）" : state.projectFilter === "none" ? "（プロジェクトなし）" : "");
-  listEl.textContent = "";
-  const c = state.convs[state.mode];
-  let items = threadsForFilter([...c.list], state.projectFilter).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-  if (searchQuery) items = items.filter((t) => (t.title || "新しいチャット").toLowerCase().includes(searchQuery));
-  for (const t of items) {
-    const row = document.createElement("div");
-    row.className = "conv" + (t.id === c.activeId ? " active" : "");
-    const title = document.createElement("span");
-    title.className = "t";
-    title.textContent = t.title || "新しいチャット";
-    const date = document.createElement("span");
-    date.className = "d";
-    const dt = new Date(t.updatedAt || t.createdAt || Date.now());
-    date.textContent = (dt.getMonth() + 1) + "/" + dt.getDate();
-    const del = document.createElement("button");
-    del.type = "button";
-    del.className = "del";
-    del.textContent = "✕";
-    del.title = "この会話を削除";
-    del.addEventListener("click", (ev) => {
-      ev.stopPropagation();
-      deleteThread(t.id);
-    });
-    row.appendChild(title);
-    row.appendChild(date);
-    row.appendChild(del);
-    row.addEventListener("click", () => {
-      switchThread(t.id);
-      closeSidebar();
-    });
-    listEl.appendChild(row);
-  }
-}
 function deleteThread(id) {
-  const c = state.convs[state.mode];
+  const c = state.convs.chat;
   const t = c.list.find((x) => x.id === id);
   if (!t) return;
   if (!confirm("会話「" + (t.title || "新しいチャット") + "」を削除しますか？")) return;
@@ -536,33 +492,33 @@ function deleteThread(id) {
     t.history.length = 0;
     t.title = "新しいチャット";
     t.updatedAt = Date.now();
-    state.ui[state.mode] = t.ui;
-    state.history[state.mode] = t.history;
+    state.ui.chat = t.ui;
+    state.history.chat = t.history;
   } else {
     c.list = c.list.filter((x) => x.id !== id);
     if (c.activeId === id) {
       const nt = [...c.list].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))[0];
       c.activeId = nt.id;
-      state.ui[state.mode] = nt.ui;
-      state.history[state.mode] = nt.history;
+      state.ui.chat = nt.ui;
+      state.history.chat = nt.history;
     }
   }
   save();
   renderThread();
   renderSidebar();
 }
-function openSidebar() {
-  renderSidebar();
-  $("sidebar").classList.add("open");
-  $("scrim").hidden = false;
-}
-function closeSidebar() {
-  $("sidebar").classList.remove("open");
-  $("scrim").hidden = true;
+function newThread() {
+  const t = {
+    id: genThreadId(), title: "新しいチャット",
+    createdAt: Date.now(), updatedAt: Date.now(), ui: [], history: [],
+    projectId: state.projectFilter !== "all" && state.projectFilter !== "none" ? state.projectFilter : null,
+  };
+  state.convs.chat.list.unshift(t);
+  switchThread(t.id);
 }
 
-/* ---------- プロジェクト（GPT/Claude風） ----------
-   プロジェクトは「名前＋指示」を持ち、会話（スレッド）が所属する。
+/* ---------- プロジェクト ----------
+   プロジェクトは「名前＋指示」を持ち、会話が所属する。
    所属する会話では、送信のたびに指示が自動でシステムプロンプトに足される。 */
 let editingProjectId = null;
 function migrateProjects(st) {
@@ -574,9 +530,7 @@ function migrateProjects(st) {
   }
   return st;
 }
-function projectById(id) {
-  return state.projects.find((p) => p.id === id) || null;
-}
+function projectById(id) { return state.projects.find((p) => p.id === id) || null; }
 function activeThreadProject() {
   const t = activeThread();
   return t && t.projectId ? projectById(t.projectId) : null;
@@ -594,41 +548,6 @@ function threadsForFilter(list, filter) {
   if (filter === "none") return list.filter((t) => !t.projectId);
   return list.filter((t) => t.projectId === filter);
 }
-function renderProjects() {
-  const el = $("projectList");
-  if (!el) return;
-  el.textContent = "";
-  const mkRow = (label, filter) => {
-    const row = document.createElement("div");
-    row.className = "conv" + (state.projectFilter === filter ? " active" : "");
-    const s = document.createElement("span");
-    s.className = "t";
-    s.textContent = label;
-    row.appendChild(s);
-    row.addEventListener("click", () => {
-      state.projectFilter = filter;
-      save();
-      renderSidebar();
-    });
-    el.appendChild(row);
-    return row;
-  };
-  mkRow("📁 すべての会話", "all");
-  for (const p of state.projects) {
-    const row = mkRow("📁 " + p.name, p.id);
-    const ed = document.createElement("button");
-    ed.type = "button";
-    ed.className = "edit";
-    ed.textContent = "✎";
-    ed.title = "プロジェクト設定（名前と指示）";
-    ed.addEventListener("click", (ev) => {
-      ev.stopPropagation();
-      openProjectDialog(p.id);
-    });
-    row.appendChild(ed);
-  }
-  mkRow("プロジェクトなし", "none");
-}
 function openProjectDialog(id) {
   editingProjectId = id || null;
   const p = id ? projectById(id) : null;
@@ -640,12 +559,8 @@ function openProjectDialog(id) {
 function updateProjBar() {
   const bar = $("projBar");
   const pr = activeThreadProject();
-  if (pr) {
-    bar.hidden = false;
-    bar.textContent = "📁 " + pr.name;
-  } else {
-    bar.hidden = true;
-  }
+  bar.hidden = !pr;
+  if (pr) bar.textContent = "📁 " + pr.name;
 }
 
 /* ---------- データの書き出し／読み込み（端末間の移動用） ----------
@@ -663,21 +578,12 @@ function buildExportData(st) {
   }
   return { app: "hachiware-chat", kind: "backup", version: 1, exportedAt: new Date().toISOString(), state: copy };
 }
-
 function parseImportData(text) {
   const d = JSON.parse(text);
   if (!d || d.app !== "hachiware-chat" || !d.state || !d.state.ui || !d.state.history) {
     throw new Error("ハチワレチャットの書き出しファイルではありません");
   }
   return d.state;
-}
-
-function getKey() {
-  return (state.apiKey || "").trim();
-}
-
-function updateKeyNotice() {
-  $("keyNotice").hidden = !!getKey();
 }
 
 /* ---------- 描画（XSS対策として textContent ベースで組み立てる） ---------- */
@@ -687,9 +593,7 @@ function renderRich(container, text) {
   // parts: [text, lang, code, text, lang, code, ...] の繰り返しになる
   for (let i = 0; i < parts.length; i++) {
     if (i % 3 === 2) {
-      const code = parts[i];
-      const lang = parts[i - 1] || "";
-      container.appendChild(buildCodeBlock(code, lang));
+      container.appendChild(buildCodeBlock(parts[i], parts[i - 1] || ""));
     } else if (i % 3 === 0) {
       const span = document.createElement("span");
       span.textContent = parts[i];
@@ -698,7 +602,7 @@ function renderRich(container, text) {
   }
 }
 
-/* Claude風コードブロック：上部バーに言語名と操作（コピー／プレビュー／保存） */
+/* コードブロック：上部バーに言語名と操作（コピー／プレビュー／保存） */
 function buildCodeBlock(code, lang) {
   const wrap = document.createElement("div");
   wrap.className = "codeblock";
@@ -756,9 +660,19 @@ async function copyText(t) {
   }
 }
 
+function downloadCode(code) {
+  const isHtml = /<\s*html/i.test(code);
+  const blob = new Blob([code], { type: "text/plain;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = isHtml ? "index.html" : "code.txt";
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+
 /* ---------- 簡易ブラウザ（HTMLプレビュー） ----------
-   sandboxは allow-scripts のみ（allow-same-origin を付けない）ので、
-   プレビュー内のアプリから本体の保存データ（APIキー等）には触れない。 */
+   sandbox に allow-same-origin を付けないので、プレビュー内のアプリから
+   本体の保存データ（APIキー等）には触れない。 */
 let pvCode = "";
 function openPreview(code) {
   pvCode = code;
@@ -771,20 +685,10 @@ function closePreview() {
   pvCode = "";
 }
 
-function downloadCode(code) {
-  const isHtml = /<\s*html/i.test(code);
-  const name = isHtml ? "index.html" : "code.txt";
-  const blob = new Blob([code], { type: "text/plain;charset=utf-8" });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = name;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-}
-
+/* ---------- メッセージ描画 ---------- */
 function addItem(who, text, imgUrl, extra) {
   const item = Object.assign({ who, text: text || "", imgUrl: imgUrl || null }, extra || {});
-  state.ui[state.mode].push(item);
+  state.ui.chat.push(item);
   drawItem(item);
   touchThread(who === "user" ? text : null);
   save();
@@ -842,15 +746,7 @@ function drawItem(item) {
       div.appendChild(b);
     };
     mkBtn("📋 引き継ぎ文をコピー", async () => {
-      let ok = false;
-      try { await navigator.clipboard.writeText(ho.text); ok = true; } catch (_) {
-        const ta = document.createElement("textarea");
-        ta.value = ho.text;
-        document.body.appendChild(ta);
-        ta.select();
-        try { ok = document.execCommand("copy"); } catch (_) { /* noop */ }
-        ta.remove();
-      }
+      const ok = await copyText(ho.text);
       alert(ok ? "コピーしました。行き先に貼ってください。" : "コピーに失敗しました。下の「ファイルとして保存」を使ってください。");
     });
     mkBtn("⬇ 引き継ぎ文をファイルとして保存", () => {
@@ -897,13 +793,84 @@ function drawItem(item) {
 function renderThread() {
   updateProjBar();
   thread.textContent = "";
-  for (const item of state.ui[state.mode]) drawItem(item);
-  if (state.ui[state.mode].length === 0) {
+  for (const item of state.ui.chat) drawItem(item);
+  if (state.ui.chat.length === 0) {
     const d = document.createElement("div");
     d.className = "msg assistant";
     d.textContent = "こんにちは。何でも聞いてください。";
     thread.appendChild(d);
   }
+}
+
+/* ---------- サイドバー描画 ---------- */
+let searchQuery = "";
+function renderSidebar() {
+  renderProjects();
+  const pr = state.projectFilter !== "all" && state.projectFilter !== "none" ? projectById(state.projectFilter) : null;
+  $("convHead").textContent = "会話" + (pr ? "（" + pr.name + "）" : state.projectFilter === "none" ? "（プロジェクトなし）" : "");
+  const listEl = $("convList");
+  listEl.textContent = "";
+  const c = state.convs.chat;
+  let items = threadsForFilter([...c.list], state.projectFilter).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  if (searchQuery) items = items.filter((t) => (t.title || "新しいチャット").toLowerCase().includes(searchQuery));
+  for (const t of items) {
+    const row = document.createElement("div");
+    row.className = "conv" + (t.id === c.activeId ? " active" : "");
+    const title = document.createElement("span");
+    title.className = "t";
+    title.textContent = t.title || "新しいチャット";
+    const date = document.createElement("span");
+    date.className = "d";
+    const dt = new Date(t.updatedAt || t.createdAt || Date.now());
+    date.textContent = (dt.getMonth() + 1) + "/" + dt.getDate();
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "del";
+    del.textContent = "✕";
+    del.title = "この会話を削除";
+    del.addEventListener("click", (ev) => { ev.stopPropagation(); deleteThread(t.id); });
+    row.appendChild(title);
+    row.appendChild(date);
+    row.appendChild(del);
+    row.addEventListener("click", () => { switchThread(t.id); closeSidebar(); });
+    listEl.appendChild(row);
+  }
+}
+function renderProjects() {
+  const el = $("projectList");
+  el.textContent = "";
+  const mkRow = (label, filter) => {
+    const row = document.createElement("div");
+    row.className = "conv" + (state.projectFilter === filter ? " active" : "");
+    const s = document.createElement("span");
+    s.className = "t";
+    s.textContent = label;
+    row.appendChild(s);
+    row.addEventListener("click", () => { state.projectFilter = filter; save(); renderSidebar(); });
+    el.appendChild(row);
+    return row;
+  };
+  mkRow("📁 すべての会話", "all");
+  for (const p of state.projects) {
+    const row = mkRow("📁 " + p.name, p.id);
+    const ed = document.createElement("button");
+    ed.type = "button";
+    ed.className = "edit";
+    ed.textContent = "✎";
+    ed.title = "プロジェクト設定（名前と指示）";
+    ed.addEventListener("click", (ev) => { ev.stopPropagation(); openProjectDialog(p.id); });
+    row.appendChild(ed);
+  }
+  mkRow("プロジェクトなし", "none");
+}
+function openSidebar() {
+  renderSidebar();
+  $("sidebar").classList.add("open");
+  $("scrim").hidden = false;
+}
+function closeSidebar() {
+  $("sidebar").classList.remove("open");
+  $("scrim").hidden = true;
 }
 
 /* ---------- モデル一覧（キー不要で取得できる /v1/models を使用） ---------- */
@@ -916,12 +883,8 @@ async function loadModels() {
     if (!res.ok) return;
     const data = (await res.json()).data || [];
     const toLabel = (m) => ({ id: m.id, label: m.display_name || m.id });
-    const chat = data
-      .filter((m) => (m.endpoints || []).includes("chat/completions"))
-      .map(toLabel);
-    const image = data
-      .filter((m) => (m.endpoints || []).includes("images/generations"))
-      .map(toLabel);
+    const chat = data.filter((m) => (m.endpoints || []).includes("chat/completions")).map(toLabel);
+    const image = data.filter((m) => (m.endpoints || []).includes("images/generations")).map(toLabel);
     if (chat.length) {
       // 上位モデルのみに絞る（TOP_CHAT_IDSの順で並べる）
       const top = TOP_CHAT_IDS.map((id) => chat.find((m) => m.id === id)).filter(Boolean);
@@ -933,7 +896,7 @@ async function loadModels() {
   fillModelSelect();
 }
 
-/* ---------- 自動切り替え（無料枠のみ・同じ系列の新しい版へ） ---------- */
+/* ---------- モデルの自動切り替え（同じ系列の新しい版へ・消えた場合は既定へ） ---------- */
 function modelFamilyVersion(id) {
   const m = String(id).toLowerCase().match(/^([a-z]+)[^0-9]*(\d+)?(?:\.(\d+))?/);
   if (!m) return { family: String(id), major: 0, minor: 0 };
@@ -959,8 +922,7 @@ function autoUpgradeModels() {
     const newer = list
       .filter((m) => {
         const v = modelFamilyVersion(m.id);
-        return v.family === curV.family &&
-          (v.major > curV.major || (v.major === curV.major && v.minor > curV.minor));
+        return v.family === curV.family && (v.major > curV.major || (v.major === curV.major && v.minor > curV.minor));
       })
       .sort((a, b) => {
         const va = modelFamilyVersion(a.id), vb = modelFamilyVersion(b.id);
@@ -980,7 +942,6 @@ function autoUpgradeModels() {
     save();
   }
 }
-
 function fillModelSelect() {
   const list = models.chat;
   modelSelect.textContent = "";
@@ -1045,7 +1006,6 @@ function buildHandoff(route, kind, reason, text) {
         "# 開発依頼（OpenCode＋Logfare／ロク）\n\n## やりたいこと\n" + text + "\n\n## 条件\n- 対象が Formula Bloom（処方の花）の場合は、プロジェクトの AGENTS.md と handoff のルールを守ること\n- 変更後は必ずテスト（npm run check）を実行し、結果を報告すること\n- 非公開のソース全文や製品データJSONを Logfare へ送らないこと（渡してよいのは安全なコンテキスト＋対象ファイル1つまで）\n- 破壊的な変更（削除・リセット等）は事前に承認を取ること\n",
     };
   }
-  // roku（メール・Mac・調べもの／秘密情報）
   const warn = kind === "secret"
     ? "⚠️ 秘密情報を含む可能性があるため、ハチワレチャット（Logfare）には送信していません。\n\n"
     : "";
@@ -1072,7 +1032,7 @@ function doHandoff(route, kind, reason, originalText) {
     imgUrl: null,
     handoff: { route, text: ho.text, filename: ho.filename },
   };
-  state.ui[state.mode].push(item);
+  state.ui.chat.push(item);
   drawItem(item);
   save();
 }
@@ -1087,40 +1047,25 @@ function apiErrorMessage(status, serverMsg) {
   }
   return "エラー（" + status + "）: " + (serverMsg || "不明なエラー");
 }
+async function readError(res) {
+  try { return (await res.json())?.error?.message || ""; } catch (_) { return ""; }
+}
 
 async function sendChat(text, atts) {
-  const mode = state.mode;
   const content = atts && atts.length ? buildUserContent(text, atts).content : text;
-  state.history[mode].push({ role: "user", content });
-  const messages = [
-    { role: "system", content: buildSystemContent() },
-    ...state.history[mode],
-  ];
+  state.history.chat.push({ role: "user", content });
+  const messages = [{ role: "system", content: buildSystemContent() }, ...state.history.chat];
   const item = { who: "assistant", text: "", imgUrl: null };
-  state.ui[mode].push(item);
+  state.ui.chat.push(item);
   const { body } = drawItem(item);
   body.parentElement.classList.add("typing");
-
   try {
     const res = await fetch(API + "/chat/completions", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: "Bearer " + getKey(),
-      },
-      body: JSON.stringify({
-        model: state.modelChoice[mode],
-        messages,
-        stream: true,
-      }),
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + getKey() },
+      body: JSON.stringify({ model: state.modelChoice.chat, messages, stream: true }),
     });
-    if (!res.ok) {
-      let msg = "";
-      try {
-        msg = (await res.json())?.error?.message || "";
-      } catch (_) { /* noop */ }
-      throw new Error(apiErrorMessage(res.status, msg));
-    }
+    if (!res.ok) throw new Error(apiErrorMessage(res.status, await readError(res)));
     const ct = res.headers.get("content-type") || "";
     if (ct.includes("application/json")) {
       const j = await res.json();
@@ -1160,12 +1105,12 @@ async function sendChat(text, atts) {
       if (!item.text) item.text = reasoning || "（空の応答でした）";
     }
     if (item.text && item.text !== "（空の応答でした）") {
-      state.history[mode].push({ role: "assistant", content: item.text });
+      state.history.chat.push({ role: "assistant", content: item.text });
     }
   } catch (e) {
     item.who = "error";
     item.text = e.message || String(e);
-    state.history[mode].pop(); // 失敗した発言は履歴から外す
+    state.history.chat.pop(); // 失敗した発言は履歴から外す
   } finally {
     body.parentElement.classList.remove("typing");
     body.parentElement.className = "msg " + (item.who === "error" ? "error" : "assistant");
@@ -1196,31 +1141,17 @@ function sizeFromText(text) {
 
 async function sendImage(prompt) {
   const item = { who: "assistant", text: "生成中です…（30秒ほどかかることがあります）", imgUrl: null };
-  state.ui[state.mode].push(item);
+  state.ui.chat.push(item);
   touchThread(prompt);
   const { div, body } = drawItem(item);
   div.classList.add("typing");
   try {
     const res = await fetch(API + "/images/generations", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: "Bearer " + getKey(),
-      },
-      body: JSON.stringify({
-        model: state.modelChoice.image,
-        prompt,
-        size: sizeFromText(prompt),
-        n: 1,
-      }),
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + getKey() },
+      body: JSON.stringify({ model: state.modelChoice.image, prompt, size: sizeFromText(prompt), n: 1 }),
     });
-    if (!res.ok) {
-      let msg = "";
-      try {
-        msg = (await res.json())?.error?.message || "";
-      } catch (_) { /* noop */ }
-      throw new Error(apiErrorMessage(res.status, msg));
-    }
+    if (!res.ok) throw new Error(apiErrorMessage(res.status, await readError(res)));
     const j = await res.json();
     const d = j?.data?.[0] || {};
     const url = d.url || (d.b64_json ? "data:image/png;base64," + d.b64_json : null);
@@ -1253,389 +1184,360 @@ async function sendImage(prompt) {
   }
 }
 
-/* ---------- 添付ファイル（画像・テキストファイル） ---------- */
+/* ---------- 添付ファイル（画像・テキスト・ZIP） ---------- */
 let pendingAtts = [];
 const TEXT_EXTS = [".txt", ".md", ".csv", ".tsv", ".json", ".js", ".ts", ".jsx", ".tsx", ".html", ".htm", ".css", ".py", ".xml", ".svg", ".log", ".yaml", ".yml", ".toml"];
+const MAX_ATTS = 4;
+const MAX_TEXT = 100000;
+
 function attNotice(msg) {
-  const n = $("autoNotice");
-  n.hidden = false;
-  n.textContent = msg;
+const n = $("autoNotice");
+n.hidden = false;
+n.textContent = msg;
 }
 function isTextFile(f) {
-  return f.type.startsWith("text/") || f.type === "application/json" ||
-    TEXT_EXTS.some((e) => f.name.toLowerCase().endsWith(e));
+return f.type.startsWith("text/") || f.type === "application/json" ||
+TEXT_EXTS.some((e) => f.name.toLowerCase().endsWith(e));
 }
 function downscaleImage(file) {
-  return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file);
-    const img = new Image();
-    img.onload = () => {
-      const max = 1024;
-      const sc = Math.min(1, max / Math.max(img.width, img.height));
-      const cv = document.createElement("canvas");
-      cv.width = Math.max(1, Math.round(img.width * sc));
-      cv.height = Math.max(1, Math.round(img.height * sc));
-      cv.getContext("2d").drawImage(img, 0, 0, cv.width, cv.height);
-      URL.revokeObjectURL(url);
-      resolve(cv.toDataURL("image/jpeg", 0.85));
-    };
-    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("画像を読み込めませんでした")); };
-    img.src = url;
-  });
+return new Promise((resolve, reject) => {
+const url = URL.createObjectURL(file);
+const img = new Image();
+img.onload = () => {
+const max = 1024;
+const sc = Math.min(1, max / Math.max(img.width, img.height));
+const cv = document.createElement("canvas");
+cv.width = Math.max(1, Math.round(img.width * sc));
+cv.height = Math.max(1, Math.round(img.height * sc));
+cv.getContext("2d").drawImage(img, 0, 0, cv.width, cv.height);
+URL.revokeObjectURL(url);
+resolve(cv.toDataURL("image/jpeg", 0.85));
+};
+img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("画像を読み込めませんでした"));};
+img.src = url;
+});
 }
+function pushTextAtt(name, rawText) {
+let t = rawText;
+let truncated = false;
+if (t.length > MAX_TEXT) { t = t.slice(0, MAX_TEXT); truncated = true;}
+pendingAtts.push({ kind: "file", name, text: t, truncated});
+}
+
 /* ZIPの中身を取り出す（ブラウザ標準機能のみ。テキストファイルだけを返す） */
 function decodeTextBytes(bytes) {
-  try { return new TextDecoder("utf-8", { fatal: true }).decode(bytes); }
-  catch (_) { return new TextDecoder("shift-jis").decode(bytes); }
+try { return new TextDecoder("utf-8", { fatal: true}).decode(bytes);}
+catch (_) { return new TextDecoder("shift-jis").decode(bytes);}
 }
 async function unzipEntries(file) {
-  const buf = new Uint8Array(await file.arrayBuffer());
-  const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
-  let eocd = -1;
-  const minPos = Math.max(0, buf.length - 65557);
-  for (let i = buf.length - 22; i >= minPos; i--) {
-    if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
-  }
-  if (eocd < 0) throw new Error("ZIPとして読み込めませんでした: " + file.name);
-  const count = dv.getUint16(eocd + 10, true);
-  let off = dv.getUint32(eocd + 16, true);
-  const out = [];
-  for (let n = 0; n < count; n++) {
-    if (off + 46 > buf.length || dv.getUint32(off, true) !== 0x02014b50) break;
-    const flags = dv.getUint16(off + 8, true);
-    const method = dv.getUint16(off + 10, true);
-    const csize = dv.getUint32(off + 20, true);
-    const nlen = dv.getUint16(off + 28, true);
-    const elen = dv.getUint16(off + 30, true);
-    const clen = dv.getUint16(off + 32, true);
-    const lhoff = dv.getUint32(off + 42, true);
-    const nameBytes = buf.subarray(off + 46, off + 46 + nlen);
-    const name = (flags & 0x800) ? new TextDecoder("utf-8").decode(nameBytes) : new TextDecoder("shift-jis").decode(nameBytes);
-    off += 46 + nlen + elen + clen;
-    if (name.endsWith("/") || (flags & 1)) continue; // フォルダと暗号化ファイルは除く
-    const lnlen = dv.getUint16(lhoff + 26, true);
-    const lelen = dv.getUint16(lhoff + 28, true);
-    const dataOff = lhoff + 30 + lnlen + lelen;
-    const comp = buf.subarray(dataOff, dataOff + csize);
-    if (method === 0) {
-      out.push({ name, data: comp });
-    } else if (method === 8 && typeof DecompressionStream !== "undefined") {
-      const raw = await new Response(new Blob([comp]).stream().pipeThrough(new DecompressionStream("deflate-raw"))).arrayBuffer();
-      out.push({ name, data: new Uint8Array(raw) });
-    }
-  }
-  return out;
+const buf = new Uint8Array(await file.arrayBuffer());
+const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+let eocd = -1;
+const minPos = Math.max(0, buf.length - 65557);
+for (let i = buf.length - 22; i >= minPos; i--) {
+if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break;}
+}
+if (eocd < 0) throw new Error("ZIPとして読み込めませんでした: " + file.name);
+const count = dv.getUint16(eocd + 10, true);
+let off = dv.getUint32(eocd + 16, true);
+const out = [];
+for (let n = 0; n < count; n++) {
+if (off + 46 > buf.length || dv.getUint32(off, true)!== 0x02014b50) break;
+const flags = dv.getUint16(off + 8, true);
+const method = dv.getUint16(off + 10, true);
+const csize = dv.getUint32(off + 20, true);
+const nlen = dv.getUint16(off + 28, true);
+const elen = dv.getUint16(off + 30, true);
+const clen = dv.getUint16(off + 32, true);
+const lhoff = dv.getUint32(off + 42, true);
+const nameBytes = buf.subarray(off + 46, off + 46 + nlen);
+const name = (flags & 0x800)? new TextDecoder("utf-8").decode(nameBytes): new TextDecoder("shift-jis").decode(nameBytes);
+off += 46 + nlen + elen + clen;
+if (name.endsWith("/") || (flags & 1)) continue; // フォルダと暗号化ファイルは除く
+const lnlen = dv.getUint16(lhoff + 26, true);
+const lelen = dv.getUint16(lhoff + 28, true);
+const dataOff = lhoff + 30 + lnlen + lelen;
+const comp = buf.subarray(dataOff, dataOff + csize);
+if (method === 0) {
+out.push({ name, data: comp});
+} else if (method === 8 && typeof DecompressionStream!== "undefined") {
+const raw = await new Response(new Blob([comp]).stream().pipeThrough(new DecompressionStream("deflate-raw"))).arrayBuffer();
+out.push({ name, data: new Uint8Array(raw)});
+}
+}
+return out;
 }
 async function addZipFile(f) {
-  const entries = await unzipEntries(f);
-  let added = 0, skipped = 0;
-  for (const e of entries) {
-    if (!TEXT_EXTS.some((x) => e.name.toLowerCase().endsWith(x))) { skipped++; continue; }
-    if (pendingAtts.length >= 4) { attNotice("添付は1回に4つまでです"); break; }
-    let t = decodeTextBytes(e.data);
-    let truncated = false;
-    if (t.length > 100000) { t = t.slice(0, 100000); truncated = true; }
-    pendingAtts.push({ kind: "file", name: f.name + " / " + e.name, text: t, truncated });
-    added++;
-  }
-  if (!added) attNotice("ZIPの中に読み込めるテキストファイルがありませんでした: " + f.name);
-  else if (skipped) attNotice("ZIPから " + added + " 件を読み込みました（テキスト以外の " + skipped + " 件は除きました）");
+const entries = await unzipEntries(f);
+let added = 0, skipped = 0;
+for (const e of entries) {
+if (!TEXT_EXTS.some((x) => e.name.toLowerCase().endsWith(x))) { skipped++; continue;}
+if (pendingAtts.length >= MAX_ATTS) { attNotice("添付は1回に4つまでです"); break;}
+pushTextAtt(f.name + " / " + e.name, decodeTextBytes(e.data));
+added++;
+}
+if (!added) attNotice("ZIPの中に読み込めるテキストファイルがありませんでした: " + f.name);
+else if (skipped) attNotice("ZIPから " + added + " 件を読み込みました（テキスト以外の " + skipped + " 件は除きました）");
 }
 async function addFiles(files) {
-  for (const f of files) {
-    if (pendingAtts.length >= 4) { attNotice("添付は1回に4つまでです"); break; }
-    try {
-      if (f.type.startsWith("image/")) {
-        pendingAtts.push({ kind: "image", url: await downscaleImage(f), name: f.name });
-      } else if (f.name.toLowerCase().endsWith(".zip")) {
-        await addZipFile(f);
-      } else if (isTextFile(f)) {
-        let t = await f.text();
-        let truncated = false;
-        if (t.length > 100000) { t = t.slice(0, 100000); truncated = true; }
-        pendingAtts.push({ kind: "file", name: f.name, text: t, truncated });
-      } else {
-        attNotice("対応していないファイルです: " + f.name + "（画像・テキスト・ZIPのみ添付できます）");
-      }
-    } catch (err) {
-      attNotice(err.message || String(err));
-    }
-  }
-  renderAttBar();
+for (const f of files) {
+if (pendingAtts.length >= MAX_ATTS) { attNotice("添付は1回に4つまでです"); break;}
+try {
+if (f.type.startsWith("image/")) {
+pendingAtts.push({ kind: "image", url: await downscaleImage(f), name: f.name});
+} else if (f.name.toLowerCase().endsWith(".zip")) {
+await addZipFile(f);
+} else if (isTextFile(f)) {
+pushTextAtt(f.name, await f.text());
+} else {
+attNotice("対応していないファイルです: " + f.name + "（画像・テキスト・ZIPのみ添付できます）");
+}
+} catch (err) {
+attNotice(err.message || String(err));
+}
+}
+renderAttBar();
 }
 function renderAttBar() {
-  const bar = $("attBar");
-  bar.textContent = "";
-  bar.hidden = pendingAtts.length === 0;
-  pendingAtts.forEach((a, i) => {
-    const d = document.createElement("div");
-    d.className = "att-item";
-    if (a.kind === "image") {
-      const im = document.createElement("img");
-      im.src = a.url;
-      im.alt = "";
-      d.appendChild(im);
-    }
-    const s = document.createElement("span");
-    s.textContent = a.kind === "image" ? "🖼 " + (a.name || "画像") : "📄 " + a.name;
-    d.appendChild(s);
-    const x = document.createElement("button");
-    x.type = "button";
-    x.textContent = "✕";
-    x.addEventListener("click", () => { pendingAtts.splice(i, 1); renderAttBar(); });
-    d.appendChild(x);
-    bar.appendChild(d);
-  });
+const bar = $("attBar");
+bar.textContent = "";
+bar.hidden = pendingAtts.length === 0;
+pendingAtts.forEach((a, i) => {
+const d = document.createElement("div");
+d.className = "att-item";
+if (a.kind === "image") {
+const im = document.createElement("img");
+im.src = a.url;
+im.alt = "";
+d.appendChild(im);
+}
+const s = document.createElement("span");
+s.textContent = a.kind === "image"? "🖼 " + (a.name || "画像"): "📄 " + a.name;
+d.appendChild(s);
+const x = document.createElement("button");
+x.type = "button";
+x.textContent = "✕";
+x.addEventListener("click", () => { pendingAtts.splice(i, 1); renderAttBar();});
+d.appendChild(x);
+bar.appendChild(d);
+});
 }
 /* 添付つきユーザー発言の組み立て: テキストファイルは本文に埋め込み、画像はvision形式のパートにする */
 function buildUserContent(text, atts) {
-  let content = text;
-  const fileNames = [];
-  let attachImg = null;
-  const files = atts.filter((a) => a.kind === "file");
-  const imgs = atts.filter((a) => a.kind === "image");
-  if (files.length) {
-    const blocks = files.map((a) =>
-      "【添付ファイル: " + a.name + (a.truncated ? "（長いため先頭10万字まで）" : "") + "】\n```\n" + a.text + "\n```");
-    content = blocks.join("\n\n") + (text ? "\n\n" + text : "");
-    for (const f of files) fileNames.push(f.name);
-  }
-  if (imgs.length) {
-    attachImg = imgs[0].url;
-    const parts = [];
-    if (content) parts.push({ type: "text", text: content });
-    for (const im of imgs) parts.push({ type: "image_url", image_url: { url: im.url } });
-    content = parts;
-  }
-  return { content, attachImg, fileNames };
+let content = text;
+const fileNames = [];
+let attachImg = null;
+const files = atts.filter((a) => a.kind === "file");
+const imgs = atts.filter((a) => a.kind === "image");
+if (files.length) {
+const blocks = files.map((a) =>
+"\n```\n" + a.text + "\n```");
+content = blocks.join("\n\n") + (text? "\n\n" + text: "");
+for (const f of files) fileNames.push(f.name);
 }
-
-$("attachBtn").addEventListener("click", () => $("fileInput").click());
-$("fileInput").addEventListener("change", async (e) => {
-  await addFiles([...e.target.files]);
-  e.target.value = "";
-});
-input.addEventListener("paste", (e) => {
-  const files = [...((e.clipboardData && e.clipboardData.files) || [])];
-  if (files.length) { e.preventDefault(); addFiles(files); }
-});
+if (imgs.length) {
+attachImg = imgs[0].url;
+const parts = [];
+if (content) parts.push({ type: "text", text: content});
+for (const im of imgs) parts.push({ type: "image_url", image_url: { url: im.url}});
+content = parts;
+}
+return { content, attachImg, fileNames};
+}
 
 /* ---------- イベント ---------- */
 $("composer").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const text = input.value.trim();
-  if (!text && pendingAtts.length === 0) return;
-  // 行き先の振り分け（自動のみ。振り分け先へはAPIキー不要）
-  const det = detectRoute(text);
-  if (det.route !== "logfare") {
-    input.value = "";
-    fitInput();
-    addItem("user", text);
-    doHandoff(det.route, det.kind, det.reason, text);
-    if (pendingAtts.length) attNotice("行き先が変更されたため、添付ファイルはまだ送っていません（入力欄の下に残しています）");
-    input.focus();
-    return;
-  }
-  if (!getKey()) {
-    $("settings").showModal();
-    return;
-  }
-  input.value = "";
-  fitInput();
-  const atts = pendingAtts;
-  pendingAtts = [];
-  renderAttBar();
-  const wantImage = detectImageIntent(text, atts.length > 0);
-  const built = !wantImage && atts.length ? buildUserContent(text, atts) : null;
-  addItem("user", text, null, built ? { attachImg: built.attachImg, fileNames: built.fileNames } : null);
-  $("sendBtn").disabled = true;
-  try {
-    if (wantImage) await sendImage(text);
-    else await sendChat(text, atts);
-  } finally {
-    $("sendBtn").disabled = false;
-    input.focus();
-  }
+e.preventDefault();
+const text = input.value.trim();
+if (!text && pendingAtts.length === 0) return;
+// 行き先の振り分け（自動のみ。振り分け先へはAPIキー不要）
+const det = detectRoute(text);
+if (det.route!== "logfare") {
+input.value = "";
+fitInput();
+addItem("user", text);
+doHandoff(det.route, det.kind, det.reason, text);
+if (pendingAtts.length) attNotice("行き先が変更されたため、添付ファイルはまだ送っていません（入力欄の下に残しています）");
+input.focus();
+return;
+}
+if (!getKey()) {
+$("settings").showModal();
+return;
+}
+input.value = "";
+fitInput();
+const atts = pendingAtts;
+pendingAtts = [];
+renderAttBar();
+const wantImage = detectImageIntent(text, atts.length > 0);
+const built =!wantImage && atts.length? buildUserContent(text, atts): null;
+addItem("user", text, null, built? { attachImg: built.attachImg, fileNames: built.fileNames}: null);
+$("sendBtn").disabled = true;
+try {
+if (wantImage) await sendImage(text);
+else await sendChat(text, atts);
+} finally {
+$("sendBtn").disabled = false;
+input.focus();
+}
 });
 
 /* 入力に合わせて折り返して伸ばす（1行→最大140pxまで。超えた分だけスクロール） */
 function fitInput() {
-  input.style.height = "auto";
-  input.style.height = Math.min(input.scrollHeight, 140) + "px";
+input.style.height = "auto";
+input.style.height = Math.min(input.scrollHeight, 140) + "px";
 }
 input.addEventListener("input", fitInput);
-
 input.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
-    e.preventDefault();
-    $("composer").requestSubmit();
-  }
+if (e.key === "Enter" &&!e.shiftKey &&!e.isComposing) {
+e.preventDefault();
+$("composer").requestSubmit();
+}
+});
+input.addEventListener("paste", (e) => {
+const files = [...((e.clipboardData && e.clipboardData.files) || [])];
+if (files.length) { e.preventDefault(); addFiles(files);}
+});
+
+$("attachBtn").addEventListener("click", () => $("fileInput").click());
+$("fileInput").addEventListener("change", async (e) => {
+await addFiles([...e.target.files]);
+e.target.value = "";
 });
 
 modelSelect.addEventListener("change", () => {
-  state.modelChoice.chat = modelSelect.value;
-  save();
+state.modelChoice.chat = modelSelect.value;
+save();
 });
 
+/* サイドバー */
+$("sideBtn").addEventListener("click", openSidebar);
+$("sideCloseBtn").addEventListener("click", closeSidebar);
+$("scrim").addEventListener("click", closeSidebar);
+$("newChatBtn").addEventListener("click", () => { newThread(); closeSidebar(); input.focus();});
+$("searchInput").addEventListener("input", (e) => {
+searchQuery = e.target.value.trim().toLowerCase();
+renderSidebar();
+});
+$("sideSettingsBtn").addEventListener("click", () => { closeSidebar(); $("settingsBtn").click();});
+
+/* プレビュー */
 $("pvClose").addEventListener("click", closePreview);
 $("pvReload").addEventListener("click", () => {
-  const f = $("pvFrame");
-  f.srcdoc = "";
-  requestAnimationFrame(() => { f.srcdoc = pvCode; });
+const f = $("pvFrame");
+f.srcdoc = "";
+requestAnimationFrame(() => { f.srcdoc = pvCode;});
 });
 $("pvOpen").addEventListener("click", () => {
-  const blob = new Blob([pvCode], { type: "text/html;charset=utf-8" });
-  window.open(URL.createObjectURL(blob), "_blank");
+const blob = new Blob([pvCode], { type: "text/html;charset=utf-8"});
+window.open(URL.createObjectURL(blob), "_blank");
 });
 
+/* 設定 */
 $("settingsBtn").addEventListener("click", () => {
-  $("apiKeyInput").value = state.apiKey || "";
-  $("autoUpgradeInput").checked = state.autoUpgrade !== false;
-  $("settings").showModal();
+$("apiKeyInput").value = state.apiKey || "";
+$("autoUpgradeInput").checked = state.autoUpgrade!== false;
+$("settings").showModal();
 });
 $("saveSettings").addEventListener("click", () => {
-  state.apiKey = $("apiKeyInput").value.trim();
-  state.autoUpgrade = $("autoUpgradeInput").checked;
-  save();
-  updateKeyNotice();
-  $("settings").close();
-  loadModels(); // キー保存後にモデル一覧を取り直す（解放済みの上位モデルを表示するため）
+state.apiKey = $("apiKeyInput").value.trim();
+state.autoUpgrade = $("autoUpgradeInput").checked;
+save();
+updateKeyNotice();
+$("settings").close();
+loadModels(); // キー保存後にモデル一覧を取り直す（解放済みの上位モデルを表示するため）
 });
 $("copyKeyBtn").addEventListener("click", async () => {
-  const key = $("apiKeyInput").value.trim();
-  const msg = $("copyKeyMsg");
-  if (!key) { msg.textContent = "キーが保存されていません"; return; }
-  try {
-    await navigator.clipboard.writeText(key);
-    msg.textContent = "コピーしました（" + key.length + "文字）";
-  } catch (e) {
-    const inp = $("apiKeyInput");
-    const orig = inp.type;
-    inp.type = "text";
-    inp.select();
-    let okCopy = false;
-    try { okCopy = document.execCommand("copy"); } catch (e2) {}
-    inp.type = orig;
-    msg.textContent = okCopy ? "コピーしました（" + key.length + "文字）" : "コピーに失敗しました";
-  }
+const key = $("apiKeyInput").value.trim();
+const msg = $("copyKeyMsg");
+if (!key) { msg.textContent = "キーが保存されていません"; return;}
+if (await copyText(key)) { msg.textContent = "コピーしました（" + key.length + "文字）"; return;}
+const inp = $("apiKeyInput");
+const orig = inp.type;
+inp.type = "text";
+inp.select();
+let okCopy = false;
+try { okCopy = document.execCommand("copy");} catch (_) { /* noop */}
+inp.type = orig;
+msg.textContent = okCopy? "コピーしました（" + key.length + "文字）": "コピーに失敗しました";
 });
-
 $("exportBtn").addEventListener("click", () => {
-  const data = buildExportData(state);
-  const now = new Date();
-  const pad = (n) => String(n).padStart(2, "0");
-  const name = "hachiware-chat-backup-" + now.getFullYear() + pad(now.getMonth() + 1) + pad(now.getDate()) + "-" + pad(now.getHours()) + pad(now.getMinutes()) + ".json";
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json;charset=utf-8" });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = name;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-  $("syncMsg").textContent = "書き出しました：" + name + "（APIキーは含まれていません）";
+const data = buildExportData(state);
+const now = new Date();
+const pad = (n) => String(n).padStart(2, "0");
+const name = "hachiware-chat-backup-" + now.getFullYear() + pad(now.getMonth() + 1) + pad(now.getDate()) + "-" + pad(now.getHours()) + pad(now.getMinutes()) + ".json";
+const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json;charset=utf-8"});
+const a = document.createElement("a");
+a.href = URL.createObjectURL(blob);
+a.download = name;
+a.click();
+setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+$("syncMsg").textContent = "書き出しました：" + name + "（APIキーは含まれていません）";
 });
 $("importBtn").addEventListener("click", () => $("importFile").click());
 $("importFile").addEventListener("change", async () => {
-  const f = $("importFile").files[0];
-  $("importFile").value = "";
-  if (!f) return;
-  try {
-    const imported = parseImportData(await f.text());
-    if (!confirm("現在の会話と設定を、読み込んだ内容で置き換えます。よろしいですか？（APIキーはこの端末のまま残ります）")) return;
-    const keepKey = state.apiKey;
-    state = Object.assign(
-      { mode: "chat", autoUpgrade: true, routeChoice: "auto",
-        modelChoice: { chat: "glm-5.3", image: "flux-2-dev" },
-        ui: { chat: [], app: [], image: [] }, history: { chat: [], app: [] },
-        projects: [], projectFilter: "all" },
-      imported
-    );
-    state.apiKey = keepKey;
-    migrateConvs(state);
-    unifyState(state);
-    migrateProjects(state);
-    linkActiveThreads();
-    save();
-    fillModelSelect();
-    renderThread();
-    renderSidebar();
-    updateKeyNotice();
-    loadModels();
-    $("syncMsg").textContent = "読み込みました。会話と設定を置き換えました。";
-  } catch (e) {
-    $("syncMsg").textContent = "読み込めませんでした：" + (e.message || String(e));
-  }
+const f = $("importFile").files[0];
+$("importFile").value = "";
+if (!f) return;
+try {
+const imported = parseImportData(await f.text());
+if (!confirm("現在の会話と設定を、読み込んだ内容で置き換えます。よろしいですか？（APIキーはこの端末のまま残ります）")) return;
+const keepKey = state.apiKey;
+state = Object.assign(
+{ mode: "chat", autoUpgrade: true, routeChoice: "auto",
+modelChoice: { chat: "glm-5.3", image: "flux-2-dev"},
+ui: { chat: [], app: [], image: []}, history: { chat: [], app: []},
+projects: [], projectFilter: "all"},
+imported
+);
+state.apiKey = keepKey;
+migrateConvs(state);
+unifyState(state);
+migrateProjects(state);
+linkActiveThreads();
+save();
+fillModelSelect();
+renderThread();
+renderSidebar();
+updateKeyNotice();
+loadModels();
+$("syncMsg").textContent = "読み込みました。会話と設定を置き換えました。";
+} catch (e) {
+$("syncMsg").textContent = "読み込めませんでした：" + (e.message || String(e));
+}
 });
 
-$("railMenu").addEventListener("click", () => {
-  if ($("sidebar").classList.contains("open")) closeSidebar();
-  else openSidebar();
-});
-$("railNew").addEventListener("click", () => $("newChatBtn").click());
-$("railSearch").addEventListener("click", () => {
-  openSidebar();
-  if ($("searchInput").hidden) $("searchBtn").click();
-  else $("searchInput").focus();
-});
-$("railProj").addEventListener("click", openSidebar);
-$("railSettings").addEventListener("click", () => $("settingsBtn").click());
-$("railAvatar").addEventListener("click", openSidebar);
-$("sideCloseBtn").addEventListener("click", closeSidebar);
-$("scrim").addEventListener("click", closeSidebar);
-$("newChatBtn").addEventListener("click", () => {
-  const t = {
-    id: genThreadId(), title: "新しいチャット",
-    createdAt: Date.now(), updatedAt: Date.now(), ui: [], history: [],
-    projectId: state.projectFilter !== "all" && state.projectFilter !== "none" ? state.projectFilter : null,
-  };
-  state.convs[state.mode].list.unshift(t);
-  switchThread(t.id);
-  closeSidebar();
-  input.focus();
-});
-
-$("searchBtn").addEventListener("click", () => {
-  const inp = $("searchInput");
-  inp.hidden = !inp.hidden;
-  if (!inp.hidden) inp.focus();
-  else { inp.value = ""; searchQuery = ""; renderSidebar(); }
-});
-$("searchInput").addEventListener("input", (e) => {
-  searchQuery = e.target.value.trim().toLowerCase();
-  renderSidebar();
-});
-$("sideSettingsBtn").addEventListener("click", () => {
-  closeSidebar();
-  $("settingsBtn").click();
-});
-
+/* プロジェクト */
 $("newProjectBtn").addEventListener("click", () => openProjectDialog(null));
 $("projClose").addEventListener("click", () => $("projectDlg").close());
 $("projSave").addEventListener("click", () => {
-  const name = $("projName").value.trim() || "無題のプロジェクト";
-  const instructions = $("projInstr").value;
-  if (editingProjectId) {
-    const p = projectById(editingProjectId);
-    if (p) { p.name = name; p.instructions = instructions; }
-  } else {
-    const p = { id: genThreadId(), name, instructions, createdAt: Date.now() };
-    state.projects.push(p);
-    state.projectFilter = p.id;
-  }
-  save();
-  renderSidebar();
-  $("projectDlg").close();
+const name = $("projName").value.trim() || "無題のプロジェクト";
+const instructions = $("projInstr").value;
+if (editingProjectId) {
+const p = projectById(editingProjectId);
+if (p) { p.name = name; p.instructions = instructions;}
+} else {
+const p = { id: genThreadId(), name, instructions, createdAt: Date.now()};
+state.projects.push(p);
+state.projectFilter = p.id;
+}
+save();
+renderSidebar();
+updateProjBar();
+$("projectDlg").close();
 });
 $("projDelete").addEventListener("click", () => {
-  const p = editingProjectId ? projectById(editingProjectId) : null;
-  if (!p) return;
-  if (!confirm("プロジェクト「" + p.name + "」を削除しますか？会話は消えず、プロジェクトなしになります。")) return;
-  state.projects = state.projects.filter((x) => x.id !== p.id);
-  for (const t of state.convs.chat.list) if (t.projectId === p.id) t.projectId = null;
-  if (state.projectFilter === p.id) state.projectFilter = "all";
-  save();
-  renderSidebar();
-  updateProjBar();
-  $("projectDlg").close();
+const p = editingProjectId? projectById(editingProjectId): null;
+if (!p) return;
+if (!confirm("プロジェクト「" + p.name + "」を削除しますか？会話は消えず、プロジェクトなしになります。")) return;
+state.projects = state.projects.filter((x) => x.id!== p.id);
+for (const t of state.convs.chat.list) if (t.projectId === p.id) t.projectId = null;
+if (state.projectFilter === p.id) state.projectFilter = "all";
+save();
+renderSidebar();
+updateProjBar();
+$("projectDlg").close();
 });
 
 /* ---------- 起動 ---------- */
@@ -1652,9 +1554,8 @@ loadModels();
 
 /* PWA：Service Workerの登録（https配信時のみ。file://では何もしない） */
 if ("serviceWorker" in navigator && location.protocol === "https:") {
-  navigator.serviceWorker.register("sw.js").catch(() => { /* 登録できなくても通常動作 */ });
+navigator.serviceWorker.register("sw.js").catch(() => { /* 登録できなくても通常動作 */});
 }
-
 </script>
 </body>
 </html>
