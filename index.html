@@ -127,7 +127,7 @@ footer { background: var(--bg); padding: 8px 16px calc(10px + env(safe-area-inse
   background: var(--bg); border: 1px solid var(--composer-border); border-radius: 24px;
   padding: 4px 6px 4px 10px; box-shadow: 0 2px 10px var(--shadow);
 }
-#composer textarea { flex: 1; resize: none; border: 0; outline: none; padding: 7px 2px; background: transparent; font-size: 1rem; line-height: 1.4; }
+#composer textarea { flex: 1; resize: none; border: 0; outline: none; padding: 3px 2px; background: transparent; font-size: 1rem; line-height: 1.4; height: 24px; overflow-y: auto; }
 #sendBtn { width: 34px; height: 34px; border-radius: 50%; padding: 0; font-size: 1rem; flex: none; display: grid; place-items: center; }
 .hint { color: var(--muted); font-size: .78rem; max-width: 800px; margin: 8px auto 0; text-align: center; }
 dialog { border: 0; border-radius: 20px; padding: 0; max-width: 480px; width: 92%; box-shadow: 0 12px 40px rgba(0,0,0,.18); background: var(--bg); color: var(--text); }
@@ -144,8 +144,17 @@ dialog { border: 0; border-radius: 20px; padding: 0; max-width: 480px; width: 92
 }
 #sidebar.open { transform: none; box-shadow: 2px 0 16px rgba(0,0,0,.12); }
 #sidebar .side-head { display: flex; justify-content: space-between; align-items: center; font-weight: 600; padding: 0 4px; }
-#newChatBtn { border-radius: 12px; padding: 11px; font-weight: 600; }
-#convList { overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+.side-item {
+  background: transparent; color: var(--text); text-align: left; width: 100%;
+  border-radius: 12px; padding: 10px 12px; font-size: .95rem;
+  display: flex; gap: 10px; align-items: center;
+}
+.side-item:hover { background: var(--hover); }
+#searchInput { width: 100%; border-radius: 10px; }
+.side-foot { margin-top: auto; border-top: 1px solid var(--border); padding-top: 10px; display: grid; gap: 4px; }
+.profile { display: flex; align-items: center; gap: 10px; padding: 8px 12px; font-size: .92rem; }
+.profile img { width: 28px; height: 28px; border-radius: 50%; background: var(--panel); }
+#convList { overflow-y: auto; display: flex; flex-direction: column; gap: 4px; flex: 1; min-height: 0; }
 .conv { padding: 10px 12px; border-radius: 12px; cursor: pointer; display: flex; gap: 8px; align-items: center; font-size: .92rem; }
 .conv:hover { background: var(--hover); }
 .conv.active { background: var(--active); font-weight: 600; }
@@ -160,7 +169,7 @@ dialog { border: 0; border-radius: 20px; padding: 0; max-width: 480px; width: 92
 .conv .edit { background: transparent; color: var(--muted); padding: 2px 8px; }
 #projInstr { width: 100%; min-height: 180px; resize: vertical; line-height: 1.6; }
 #composer { flex-direction: column; align-items: stretch; }
-.composer-row { display: flex; gap: 6px; align-items: center; width: 100%; }
+.composer-row { display: flex; gap: 6px; align-items: center; width: 100%; height: 36px; }
 #attBar { display: flex; gap: 8px; flex-wrap: wrap; padding: 2px 2px 8px; }
 .att-item { display: flex; align-items: center; gap: 6px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 4px 8px; font-size: .85rem; }
 .att-item img { width: 36px; height: 36px; object-fit: cover; border-radius: 6px; }
@@ -187,12 +196,18 @@ dialog { border: 0; border-radius: 20px; padding: 0; max-width: 480px; width: 92
 </header>
 
 <aside id="sidebar" aria-label="会話リスト">
-  <div class="side-head"><span>メニュー</span><button id="sideCloseBtn" class="ghost" type="button">✕</button></div>
-  <button id="newChatBtn" type="button">＋ 新しいチャット</button>
+  <div class="side-head"><span></span><button id="sideCloseBtn" class="ghost" type="button">✕</button></div>
+  <button id="newChatBtn" class="side-item" type="button">✏️ 新しいチャット</button>
+  <button id="searchBtn" class="side-item" type="button">🔍 会話を検索</button>
+  <input id="searchInput" type="search" placeholder="会話を検索" hidden>
   <div class="side-sec"><span>プロジェクト</span><button id="newProjectBtn" class="ghost" type="button">＋ 追加</button></div>
   <div id="projectList"></div>
   <div class="side-sec"><span id="convHead">会話</span></div>
   <div id="convList"></div>
+  <div class="side-foot">
+    <button id="sideSettingsBtn" class="side-item" type="button">⚙️ 設定</button>
+    <div class="profile"><img src="icon-512.png" alt="">ハチワレ</div>
+  </div>
 </aside>
 <div id="scrim" hidden></div>
 
@@ -416,6 +431,7 @@ function switchThread(id) {
   renderThread();
   renderSidebar();
 }
+let searchQuery = "";
 function renderSidebar() {
   const listEl = $("convList");
   if (!listEl) return;
@@ -425,7 +441,8 @@ function renderSidebar() {
   $("convHead").textContent = "会話" + (pr ? "（" + pr.name + "）" : state.projectFilter === "none" ? "（プロジェクトなし）" : "");
   listEl.textContent = "";
   const c = state.convs[state.mode];
-  const items = threadsForFilter([...c.list], state.projectFilter).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  let items = threadsForFilter([...c.list], state.projectFilter).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  if (searchQuery) items = items.filter((t) => (t.title || "新しいチャット").toLowerCase().includes(searchQuery));
   for (const t of items) {
     const row = document.createElement("div");
     row.className = "conv" + (t.id === c.activeId ? " active" : "");
@@ -1364,6 +1381,21 @@ $("newChatBtn").addEventListener("click", () => {
   switchThread(t.id);
   closeSidebar();
   input.focus();
+});
+
+$("searchBtn").addEventListener("click", () => {
+  const inp = $("searchInput");
+  inp.hidden = !inp.hidden;
+  if (!inp.hidden) inp.focus();
+  else { inp.value = ""; searchQuery = ""; renderSidebar(); }
+});
+$("searchInput").addEventListener("input", (e) => {
+  searchQuery = e.target.value.trim().toLowerCase();
+  renderSidebar();
+});
+$("sideSettingsBtn").addEventListener("click", () => {
+  closeSidebar();
+  $("settingsBtn").click();
 });
 
 $("newProjectBtn").addEventListener("click", () => openProjectDialog(null));
