@@ -1077,16 +1077,18 @@ const ROUTE_NAMES = {
 
 function doHandoff(route, kind, reason, originalText) {
   const ho = buildHandoff(route, kind, reason, originalText);
+  const guide = route === "roku"
+    ? "\nLogfareには送信していません。引き継ぎ文は自動でコピーされます。ロクのチャットに貼るだけで、そのまま実行されます。\n\n--- 引き継ぎ文 ---\n"
+    : "\nLogfareには送信していません。下の引き継ぎ文をコピー（または保存）して、行き先で使ってください。\n\n--- 引き継ぎ文 ---\n";
   const item = {
     who: "assistant",
-    text:
-      "↪ 行き先を切り替えました：" + ROUTE_NAMES[route] + "\n理由：" + reason +
-      "\nLogfareには送信していません。下の引き継ぎ文をコピー（または保存）して、行き先で使ってください。\n\n--- 引き継ぎ文 ---\n" + ho.text,
+    text: "↪ 行き先を切り替えました：" + ROUTE_NAMES[route] + "\n理由：" + reason + guide + ho.text,
     imgUrl: null,
     handoff: { route, text: ho.text, filename: ho.filename },
   };
   state.ui.chat.push(item);
   drawItem(item);
+  if (route === "roku") copyText(ho.text); // ロク行きは自動でコピーしておく（失敗してもボタンから手動コピーできる）
   save();
 }
 
