@@ -152,6 +152,26 @@ main#thread { flex: 1; overflow-y: auto; width: 100%; }
   padding: 7px 14px; border-radius: 999px; font-size: .82rem; cursor: pointer; border: 0;
 }
 
+/* 返信の操作ボタン（GPT風：コピー・読み上げ・共有・…） */
+.msg-actions { display: flex; gap: 2px; align-items: center; margin-top: 4px; }
+.msg-actions > button, .msg-actions .menu-wrap > button {
+  background: transparent; color: var(--muted); padding: 6px; border-radius: 8px; line-height: 0;
+}
+.msg-actions > button:hover, .msg-actions .menu-wrap > button:hover { background: var(--hover); color: var(--text); }
+.msg-actions button.on { color: var(--text); background: var(--hover); }
+.msg-actions svg { width: 18px; height: 18px; display: block; }
+.msg-actions .menu-wrap { position: relative; }
+.msg-menu {
+  position: absolute; left: 0; bottom: 36px; z-index: 40; min-width: 200px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 12px;
+  box-shadow: 0 8px 28px var(--shadow); padding: 4px;
+}
+.msg-menu button {
+  display: block; width: 100%; text-align: left; background: transparent; color: var(--text);
+  padding: 8px 10px; border-radius: 8px; font-size: .9rem; white-space: nowrap;
+}
+.msg-menu button:hover { background: var(--hover); }
+
 /* コードブロック（Claude風：上部バー＋折り返し、横スクロールなし） */
 .codeblock { border-radius: 12px; overflow: hidden; margin: 8px 0; border: 1px solid var(--border); }
 .code-head {
@@ -724,6 +744,151 @@ function downloadCode(code) {
   setTimeout(() => URL.revokeObjectURL(a.href), 4000);
 }
 
+/* ---------- 返信の操作ボタン（GPT風：コピー・読み上げ・共有・…） ---------- */
+const ICON_COPY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+const ICON_CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+const ICON_SPEAK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/></svg>';
+const ICON_STOP = '<svg viewBox="0 0 24 24"><rect x="6.5" y="6.5" width="11" height="11" rx="2" fill="currentColor"/></svg>';
+const ICON_SHARE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>';
+const ICON_MORE = '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>';
+
+function speechPlain(t) {
+  return String(t || "")
+    .replace(/```[\s\S]*?```/g, "（コードブロック）")
+    .replace(/`([^`]*)`/g, "$1")
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/^#{1,6}\s*/gm, "")
+    .replace(/[*_~]{1,3}/g, "")
+    .replace(/^>\s?/gm, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+let speakingBtn = null;
+function stopSpeech() {
+  try { if ("speechSynthesis" in window) speechSynthesis.cancel(); } catch (_) {}
+  if (speakingBtn) {
+    speakingBtn.innerHTML = ICON_SPEAK;
+    speakingBtn.classList.remove("on");
+    speakingBtn = null;
+  }
+}
+function speakText(text, btn) {
+  if (!("speechSynthesis" in window)) { alert("この端末・ブラウザでは読み上げが使えません。"); return; }
+  if (speakingBtn === btn) { stopSpeech(); return; }
+  stopSpeech();
+  const plain = speechPlain(text);
+  if (!plain) return;
+  const u = new SpeechSynthesisUtterance(plain);
+  u.lang = "ja-JP";
+  u.rate = 1;
+  u.onend = () => { if (speakingBtn === btn) stopSpeech(); };
+  u.onerror = () => { if (speakingBtn === btn) stopSpeech(); };
+  speakingBtn = btn;
+  btn.innerHTML = ICON_STOP;
+  btn.classList.add("on");
+  speechSynthesis.speak(u);
+}
+
+document.addEventListener("click", () => {
+  document.querySelectorAll(".msg-menu").forEach((m) => { m.hidden = true; });
+});
+
+function attachMsgActions(div, item) {
+  if (!item || item.who !== "assistant" || item.handoff || item.imgUrl || !item.text) return;
+  if (item.text.indexOf("（空の応答") === 0) return;
+  if (div.querySelector(".msg-actions")) return;
+  const bar = document.createElement("div");
+  bar.className = "msg-actions";
+  const mk = (icon, title, fn) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.innerHTML = icon;
+    b.title = title;
+    b.setAttribute("aria-label", title);
+    b.addEventListener("click", (e) => { e.stopPropagation(); fn(b); });
+    bar.appendChild(b);
+    return b;
+  };
+  mk(ICON_COPY, "コピー", async (b) => {
+    if (await copyText(item.text)) {
+      b.innerHTML = ICON_CHECK;
+      setTimeout(() => { b.innerHTML = ICON_COPY; }, 1200);
+    }
+  });
+  mk(ICON_SPEAK, "読み上げ", (b) => speakText(item.text, b));
+  mk(ICON_SHARE, "共有", async () => {
+    if (navigator.share) {
+      try { await navigator.share({ text: item.text }); } catch (_) { /* キャンセル時は何もしない */ }
+    } else {
+      alert(await copyText(item.text) ? "共有機能が使えないため、本文をコピーしました。" : "コピーに失敗しました。");
+    }
+  });
+  const wrap = document.createElement("div");
+  wrap.className = "menu-wrap";
+  const mb = document.createElement("button");
+  mb.type = "button";
+  mb.innerHTML = ICON_MORE;
+  mb.title = "その他";
+  mb.setAttribute("aria-label", "その他");
+  const menu = document.createElement("div");
+  menu.className = "msg-menu";
+  menu.hidden = true;
+  const mi = (label, fn) => {
+    const x = document.createElement("button");
+    x.type = "button";
+    x.textContent = label;
+    x.addEventListener("click", (e) => { e.stopPropagation(); menu.hidden = true; fn(); });
+    menu.appendChild(x);
+  };
+  mi("⬇ テキストを保存（.md）", () => {
+    const blob = new Blob([item.text], { type: "text/markdown;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "reply.md";
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  });
+  mi("↻ もう一度生成する", () => regenerateLast(item));
+  mb.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const willOpen = menu.hidden;
+    document.querySelectorAll(".msg-menu").forEach((m) => { m.hidden = true; });
+    menu.hidden = !willOpen;
+  });
+  wrap.appendChild(mb);
+  wrap.appendChild(menu);
+  bar.appendChild(wrap);
+  div.appendChild(bar);
+}
+
+/* 最後の返信だけを対象に、同じ質問でもう一度生成する */
+async function regenerateLast(item) {
+  if ($("sendBtn").disabled) return;
+  const hist = state.history.chat;
+  const plain = state.ui.chat.filter((x) => x.who === "assistant" && !x.handoff && !x.imgUrl && x.text);
+  if (!hist.length || hist[hist.length - 1].role !== "assistant" || plain[plain.length - 1] !== item) {
+    alert("再生成できるのは、最後の返信だけです。");
+    return;
+  }
+  hist.pop();
+  const idx = state.ui.chat.indexOf(item);
+  if (idx >= 0) state.ui.chat.splice(idx, 1);
+  const lastUser = hist[hist.length - 1];
+  renderThread();
+  save();
+  if (!lastUser || lastUser.role !== "user") return;
+  if (!getKey()) { $("settings").showModal(); return; }
+  $("sendBtn").disabled = true;
+  try {
+    await sendChat(null, null, lastUser.content);
+  } finally {
+    $("sendBtn").disabled = false;
+    input.focus();
+  }
+}
+
 /* ---------- 簡易ブラウザ（HTMLプレビュー） ----------
    sandbox に allow-same-origin を付けないので、プレビュー内のアプリから
    本体の保存データ（APIキー等）には触れない。 */
@@ -827,6 +992,7 @@ function drawItem(item) {
       div.appendChild(note);
     }
   }
+  attachMsgActions(div, item);
   if (item.who === "user") {
     col.appendChild(div);
   } else {
@@ -845,6 +1011,7 @@ function drawItem(item) {
 }
 
 function renderThread() {
+  stopSpeech();
   updateProjBar();
   col.textContent = "";
   for (const item of state.ui.chat) drawItem(item);
@@ -1107,9 +1274,9 @@ async function readError(res) {
   try { return (await res.json())?.error?.message || ""; } catch (_) { return ""; }
 }
 
-async function sendChat(text, atts) {
-  const content = atts && atts.length ? buildUserContent(text, atts).content : text;
-  state.history.chat.push({ role: "user", content });
+async function sendChat(text, atts, prebuilt) {
+  const content = prebuilt !== undefined ? prebuilt : (atts && atts.length ? buildUserContent(text, atts).content : text);
+  if (prebuilt === undefined) state.history.chat.push({ role: "user", content });
   const messages = [{ role: "system", content: buildSystemContent() }, ...state.history.chat];
   const item = { who: "assistant", text: "", imgUrl: null };
   state.ui.chat.push(item);
@@ -1182,11 +1349,12 @@ async function sendChat(text, atts) {
   } catch (e) {
     item.who = "error";
     item.text = e.message || String(e);
-    state.history.chat.pop(); // 失敗した発言は履歴から外す
+    if (prebuilt === undefined) state.history.chat.pop(); // 失敗した発言は履歴から外す（再生成時は元の発言を残す）
   } finally {
     body.parentElement.classList.remove("typing");
     body.parentElement.className = "msg " + (item.who === "error" ? "error" : "assistant");
     renderRich(body, item.text);
+    attachMsgActions(body.parentElement, item);
     save();
   }
 }
