@@ -166,6 +166,14 @@ main#thread {
   white-space: pre-wrap; word-break: break-all; overflow-x: hidden; font-size: .82rem; line-height: 1.6;
 }
 .codeblock pre code { background: transparent; padding: 0; }
+.inline-pv { border-top: 1px solid var(--border); }
+.inline-pv-bar {
+  display: flex; justify-content: space-between; align-items: center;
+  background: var(--panel); color: var(--muted); padding: 5px 8px 5px 12px; font-size: .75rem;
+}
+.code-acts.dark button { color: var(--muted); }
+.code-acts.dark button:hover { background: var(--hover); color: var(--text); }
+.inline-pv-frame { width: 100%; height: 380px; border: 0; display: block; background: #fff; }
 
 /* ===== 入力欄 ===== */
 footer { padding: 8px 16px calc(10px + env(safe-area-inset-bottom)); max-width: 800px; width: 100%; margin: 0 auto; }
@@ -602,7 +610,11 @@ function renderRich(container, text) {
   }
 }
 
-/* コードブロック：上部バーに言語名と操作（コピー／プレビュー／保存） */
+/* ストリーミング中は false（プレビューのiframeを何度も読み直さないため） */
+let richFinal = true;
+
+/* コードブロック：上部バーに言語名と操作（コピー／プレビュー／保存）。
+   完成したHTMLには、その場で動くプレビューも自動で付ける。 */
 function buildCodeBlock(code, lang) {
   const wrap = document.createElement("div");
   wrap.className = "codeblock";
@@ -641,7 +653,48 @@ function buildCodeBlock(code, lang) {
   codeEl.textContent = code;
   pre.appendChild(codeEl);
   wrap.appendChild(pre);
+  if (richFinal && /<\s*(!doctype|html)/i.test(code)) wrap.appendChild(buildInlinePreview(code));
   return wrap;
+}
+
+/* その場プレビュー：コードの下に、実際に動く画面を埋め込む（見えた時点で読み込む） */
+function buildInlinePreview(code) {
+  const box = document.createElement("div");
+  box.className = "inline-pv";
+  const bar = document.createElement("div");
+  bar.className = "inline-pv-bar";
+  const t = document.createElement("span");
+  t.textContent = "▶ プレビュー（実際に動きます）";
+  bar.appendChild(t);
+  const acts = document.createElement("span");
+  acts.className = "code-acts dark";
+  const fr = document.createElement("iframe");
+  fr.className = "inline-pv-frame";
+  fr.setAttribute("sandbox", "allow-scripts allow-modals allow-popups");
+  fr.title = "プレビュー";
+  const rl = document.createElement("button");
+  rl.type = "button";
+  rl.textContent = "↻";
+  rl.title = "再読み込み";
+  rl.addEventListener("click", () => { fr.srcdoc = code; });
+  acts.appendChild(rl);
+  const full = document.createElement("button");
+  full.type = "button";
+  full.textContent = "⛶ 大きく開く";
+  full.addEventListener("click", () => openPreview(code));
+  acts.appendChild(full);
+  bar.appendChild(acts);
+  box.appendChild(bar);
+  box.appendChild(fr);
+  if ("IntersectionObserver" in window) {
+    const io = new IntersectionObserver((es) => {
+      for (const e of es) if (e.isIntersecting) { fr.srcdoc = code; io.disconnect(); }
+    }, { rootMargin: "200px" });
+    io.observe(fr);
+  } else {
+    fr.srcdoc = code;
+  }
+  return box;
 }
 
 async function copyText(t) {
@@ -1059,7 +1112,10 @@ async function sendChat(text, atts) {
   state.ui.chat.push(item);
   const { body } = drawItem(item);
   body.parentElement.classList.add("typing");
-  try {
+
+  /* 1回分のリクエスト。表示は item/body へ逐次反映し、最終テキストを返す（空なら ""） */
+  const fetchReply = async () => {
+    item.text = "";
     const res = await fetch(API + "/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: "Bearer " + getKey() },
@@ -1069,12 +1125,15 @@ async function sendChat(text, atts) {
     const ct = res.headers.get("content-type") || "";
     if (ct.includes("application/json")) {
       const j = await res.json();
-      item.text = j?.choices?.[0]?.message?.content || j?.choices?.[0]?.message?.reasoning_content || "（空の応答でした）";
-    } else {
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buf = "";
-      let reasoning = "";
+      item.text = j?.choices?.[0]?.message?.content || j?.choices?.[0]?.message?.reasoning_content || "";
+      return item.text;
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    let reasoning = "";
+    richFinal = false; // 逐次表示中はプレビューを付けない
+    try {
       for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -1102,10 +1161,20 @@ async function sendChat(text, atts) {
           } catch (_) { /* 部分行は無視 */ }
         }
       }
-      if (!item.text) item.text = reasoning || "（空の応答でした）";
+    } finally {
+      richFinal = true;
     }
-    if (item.text && item.text !== "（空の応答でした）") {
-      state.history.chat.push({ role: "assistant", content: item.text });
+    if (!item.text) item.text = reasoning;
+    return item.text;
+  };
+
+  try {
+    let reply = await fetchReply();
+    if (!reply) reply = await fetchReply(); // 空の応答は1回だけ自動で送り直す
+    if (!reply) {
+      item.text = "（空の応答でした。もう一度送ってみてください）";
+    } else {
+      state.history.chat.push({ role: "assistant", content: reply });
     }
   } catch (e) {
     item.who = "error";
@@ -1345,11 +1414,44 @@ content = parts;
 return { content, attachImg, fileNames};
 }
 
+/* ---------- プレビューの即時実行 ----------
+「プレビュー」と頼まれたら、モデルには聞かない。今の会話にある
+完成HTMLをアプリ自身がその場で開く（＝チャット内の小さなPCで実行する）。 */
+function isPreviewRequest(text) {
+const t = String(text || "");
+return /プレビュー|preview/i.test(t) || /コード(じゃなく|ではなく)/.test(t);
+}
+function findLastHtmlCode() {
+const items = state.ui.chat;
+for (let i = items.length - 1; i >= 0; i--) {
+const t = items[i].text || "";
+const blocks = [...t.matchAll(/```(\w*)\n?([\s\S]*?)```/g)];
+for (let j = blocks.length - 1; j >= 0; j--) {
+if (/<\s*(!doctype|html)/i.test(blocks[j][2])) return blocks[j][2];
+}
+if (/<\s*(!doctype|html)/i.test(t)) return t.slice(t.indexOf("<"));
+}
+return null;
+}
+
 /* ---------- イベント ---------- */
 $("composer").addEventListener("submit", async (e) => {
 e.preventDefault();
 const text = input.value.trim();
 if (!text && pendingAtts.length === 0) return;
+// プレビューはアプリが即実行する（モデルに送らない）
+if (isPreviewRequest(text)) {
+const code = findLastHtmlCode();
+if (code) {
+input.value = "";
+fitInput();
+addItem("user", text);
+addItem("assistant", "プレビューを開きました。コードではなく、実際に動く画面です。");
+openPreview(code);
+input.focus();
+return;
+}
+}
 // 行き先の振り分け（自動のみ。振り分け先へはAPIキー不要）
 const det = detectRoute(text);
 if (det.route!== "logfare") {
