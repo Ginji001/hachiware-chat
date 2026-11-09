@@ -172,6 +172,22 @@ main#thread { flex: 1; overflow-y: auto; width: 100%; }
 }
 .msg-menu button:hover { background: var(--hover); }
 
+/* Markdown描画（GPT/Claude並み：見出し・リスト・表・引用） */
+.msg p { margin: 0 0 .55em; }
+.msg p:last-child { margin-bottom: 0; }
+.msg h2 { font-size: 1.18rem; margin: .55em 0 .35em; line-height: 1.4; }
+.msg h3 { font-size: 1.06rem; margin: .5em 0 .3em; line-height: 1.4; }
+.msg h4, .msg h5 { font-size: 1rem; margin: .45em 0 .25em; line-height: 1.4; }
+.msg ul, .msg ol { margin: .15em 0 .6em; padding-left: 1.45em; }
+.msg li { margin: .12em 0; }
+.msg blockquote { margin: .4em 0; padding: 2px 0 2px 12px; border-left: 3px solid var(--border); color: var(--muted); }
+.msg hr { border: 0; border-top: 1px solid var(--border); margin: .7em 0; }
+.msg a { color: #2f6fd0; }
+.md-table { overflow-x: auto; margin: .4em 0 .7em; }
+.md-table table { border-collapse: collapse; width: 100%; font-size: .9rem; }
+.md-table th, .md-table td { border: 1px solid var(--border); padding: 6px 9px; text-align: left; white-space: normal; vertical-align: top; }
+.md-table th { background: var(--panel); font-weight: 600; }
+
 /* コードブロック（Claude風：上部バー＋折り返し、横スクロールなし） */
 .codeblock { border-radius: 12px; overflow: hidden; margin: 8px 0; border: 1px solid var(--border); }
 .code-head {
@@ -389,7 +405,8 @@ const SYSTEM_PROMPT =
   "・「コードを実行できません」「プレビューを表示できません」「画像は生成できません」のように、自分の制限を並べて謝らないでください。この環境では、それらは全部できます。" +
   "・「どの方法にしますか」と進め方の選択肢を並べて、ユーザーに決めさせないでください。まず一番よい形で実現してください。" +
   "・文章や文字だけの図で済ませようとしないでください。見て分かるものは、プレビューで動くHTMLやSVGで見せてください。" +
-  "・アプリやPWA、ツールを作ってほしいと頼まれたら、日本語で短く説明したあと、そのままブラウザで動く単一HTMLファイル全体（CSSとJavaScript込み）を1つのコードブロックで出力してください。データ保存が必要ならlocalStorageを使ってください。";
+  "・アプリやPWA、ツールを作ってほしいと頼まれたら、日本語で短く説明したあと、そのままブラウザで動く単一HTMLファイル全体（CSSとJavaScript込み）を1つのコードブロックで出力してください。データ保存が必要ならlocalStorageを使ってください。" +
+  "・見出し、箇条書き、表などのMarkdownは正しく整形されて表示されます。整理して伝えるときは、文章の羅列ではなく表や箇条書きを使ってください。";
 
 /* ---------- 状態 ---------- */
 let models = structuredClone(FALLBACK_MODELS);
@@ -624,6 +641,117 @@ function parseImportData(text) {
 }
 
 /* ---------- 描画（XSS対策として textContent ベースで組み立てる） ---------- */
+function appendInline(el, text) {
+  const re = /(`[^`]+`)|(\*\*[^*]+\*\*)|(\*[^*\n]+\*)|(~~[^~]+~~)|(\[([^\]]+)\]\((https?:[^)\s]+)\))/g;
+  let last = 0;
+  let m;
+  const pushText = (t) => { if (t) el.appendChild(document.createTextNode(t)); };
+  while ((m = re.exec(text))) {
+    pushText(text.slice(last, m.index));
+    if (m[1]) { const c = document.createElement("code"); c.textContent = m[1].slice(1, -1); el.appendChild(c); }
+    else if (m[2]) { const b = document.createElement("strong"); b.textContent = m[2].slice(2, -2); el.appendChild(b); }
+    else if (m[3]) { const em = document.createElement("em"); em.textContent = m[3].slice(1, -1); el.appendChild(em); }
+    else if (m[4]) { const s = document.createElement("s"); s.textContent = m[4].slice(2, -2); el.appendChild(s); }
+    else if (m[5]) { const a = document.createElement("a"); a.href = m[7]; a.textContent = m[6]; a.target = "_blank"; a.rel = "noopener"; el.appendChild(a); }
+    last = m.index + m[0].length;
+  }
+  pushText(text.slice(last));
+}
+
+function splitRow(line) {
+  let s = String(line).trim();
+  if (s.startsWith("|")) s = s.slice(1);
+  if (s.endsWith("|")) s = s.slice(0, -1);
+  return s.split("|").map((c) => c.trim());
+}
+function isTableSep(line) {
+  const s = String(line).trim();
+  return s.includes("-") && s.includes("|") && /^[\s|:\-]+$/.test(s);
+}
+function isUlLine(line) { return /^\s*[-*]\s+/.test(line) || /^\s*・/.test(line); }
+function isOlLine(line) { return /^\s*\d+[.、)]\s+/.test(line); }
+function startsBlock(lines, i) {
+  const line = lines[i];
+  if (/^#{1,4}\s+/.test(line)) return true;
+  if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) return true;
+  if (/^>\s?/.test(line)) return true;
+  if (isUlLine(line) || isOlLine(line)) return true;
+  if (line.includes("|") && i + 1 < lines.length && isTableSep(lines[i + 1])) return true;
+  return false;
+}
+
+function buildTable(head, rows) {
+  const wrap = document.createElement("div");
+  wrap.className = "md-table";
+  const t = document.createElement("table");
+  const thead = document.createElement("thead");
+  const htr = document.createElement("tr");
+  head.forEach((c) => { const th = document.createElement("th"); appendInline(th, c); htr.appendChild(th); });
+  thead.appendChild(htr);
+  t.appendChild(thead);
+  const tbody = document.createElement("tbody");
+  rows.forEach((r) => {
+    const tr = document.createElement("tr");
+    head.forEach((_, ci) => { const td = document.createElement("td"); appendInline(td, r[ci] || ""); tr.appendChild(td); });
+    tbody.appendChild(tr);
+  });
+  t.appendChild(tbody);
+  wrap.appendChild(t);
+  return wrap;
+}
+
+/* Markdownのブロック単位描画：見出し・リスト・表・引用・区切り線・段落 */
+function renderTextPart(container, text) {
+  const lines = String(text || "").split("\n");
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (!line.trim()) { i++; continue; }
+    if (line.includes("|") && i + 1 < lines.length && isTableSep(lines[i + 1])) {
+      const head = splitRow(line);
+      i += 2;
+      const rows = [];
+      while (i < lines.length && lines[i].trim() && lines[i].includes("|")) { rows.push(splitRow(lines[i])); i++; }
+      container.appendChild(buildTable(head, rows));
+      continue;
+    }
+    const h = line.match(/^(#{1,4})\s+(.*)$/);
+    if (h) {
+      const el = document.createElement("h" + (h[1].length + 1));
+      appendInline(el, h[2]);
+      container.appendChild(el);
+      i++;
+      continue;
+    }
+    if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) { container.appendChild(document.createElement("hr")); i++; continue; }
+    if (/^>\s?/.test(line)) {
+      const qs = [];
+      while (i < lines.length && /^>\s?/.test(lines[i])) { qs.push(lines[i].replace(/^>\s?/, "")); i++; }
+      const bq = document.createElement("blockquote");
+      qs.forEach((q, k) => { if (k) bq.appendChild(document.createElement("br")); appendInline(bq, q); });
+      container.appendChild(bq);
+      continue;
+    }
+    if (isUlLine(line) || isOlLine(line)) {
+      const ordered = isOlLine(line) && !isUlLine(line);
+      const list = document.createElement(ordered ? "ol" : "ul");
+      while (i < lines.length && (ordered ? isOlLine(lines[i]) : isUlLine(lines[i]))) {
+        const li = document.createElement("li");
+        appendInline(li, lines[i].replace(ordered ? /^\s*\d+[.、)]\s+/ : /^\s*(?:[-*]\s+|・\s*)/, ""));
+        list.appendChild(li);
+        i++;
+      }
+      container.appendChild(list);
+      continue;
+    }
+    const ps = [];
+    while (i < lines.length && lines[i].trim() && !startsBlock(lines, i)) { ps.push(lines[i]); i++; }
+    const p = document.createElement("p");
+    ps.forEach((q, k) => { if (k) p.appendChild(document.createElement("br")); appendInline(p, q); });
+    container.appendChild(p);
+  }
+}
+
 function renderRich(container, text) {
   container.textContent = "";
   const parts = String(text || "").split(/```(\w*)\n?/);
@@ -632,9 +760,7 @@ function renderRich(container, text) {
     if (i % 3 === 2) {
       container.appendChild(buildCodeBlock(parts[i], parts[i - 1] || ""));
     } else if (i % 3 === 0) {
-      const span = document.createElement("span");
-      span.textContent = parts[i];
-      container.appendChild(span);
+      renderTextPart(container, parts[i]);
     }
   }
 }
