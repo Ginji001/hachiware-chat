@@ -103,7 +103,19 @@ header .left { display: flex; align-items: center; gap: 4px; }
 }
 .side-sec button { padding: 4px 10px; }
 #projectList { display: flex; flex-direction: column; gap: 4px; }
+#spaceList { display: flex; flex-direction: column; gap: 4px; }
 #convList { overflow-y: auto; display: flex; flex-direction: column; gap: 4px; flex: 1; min-height: 0; }
+
+/* ===== スペース表示 ===== */
+.space-view { display: grid; gap: 12px; }
+.space-view h2 { margin: 0; font-size: 1.25rem; }
+.space-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.space-body { line-height: 1.7; }
+.space-edit-title, .space-edit-body {
+  width: 100%; border: 1px solid var(--border); border-radius: 12px;
+  padding: 8px 10px; background: var(--bg); color: var(--text); font-family: inherit;
+}
+.space-edit-body { min-height: 320px; resize: vertical; line-height: 1.6; font-size: 1rem; }
 .conv {
   padding: 10px 12px; border-radius: 12px; cursor: pointer;
   display: flex; gap: 8px; align-items: center; font-size: .92rem;
@@ -284,6 +296,8 @@ dialog { border: 0; border-radius: 20px; padding: 0; max-width: 480px; width: 92
   <input id="searchInput" type="search" placeholder="🔍 会話を検索">
   <div class="side-sec"><span>プロジェクト</span><button id="newProjectBtn" class="ghost" type="button">＋ 追加</button></div>
   <div id="projectList"></div>
+  <div class="side-sec"><span>スペース</span><button id="newSpaceBtn" class="ghost" type="button">＋ 新しいスペース</button></div>
+  <div id="spaceList"></div>
   <div class="side-sec"><span id="convHead">会話</span></div>
   <div id="convList"></div>
   <div class="side-foot">
@@ -337,6 +351,21 @@ dialog { border: 0; border-radius: 20px; padding: 0; max-width: 480px; width: 92
         <input id="importFile" type="file" accept=".json,application/json" hidden>
       </div>
       <p class="hint" id="syncMsg"></p>
+    </div>
+    <div>
+      <h3 style="margin:0 0 8px">GitHub同期</h3>
+      <label>GitHubトークン
+        <input id="ghTokenInput" type="password" autocomplete="off" placeholder="GitHubのトークン（この端末だけに保存）">
+      </label>
+      <label>リポジトリ（owner/repo）
+        <input id="ghRepoInput" type="text" placeholder="Ginji001/hachiware-chat-data">
+      </label>
+      <div class="row" style="justify-content:flex-start">
+        <button id="ghSaveBtn" type="button" class="ghost">⬆ GitHubへ保存</button>
+        <button id="ghLoadBtn" type="button" class="ghost">⬇ GitHubから読み込む</button>
+      </div>
+      <p class="hint" id="ghMsg"></p>
+      <p class="hint">会話・スペース・設定をリポジトリ直下の hachiware-sync.json に保存します。APIキーとトークンは同期に含まれません。</p>
     </div>
     <label><input id="autoUpgradeInput" type="checkbox" checked style="width:auto"> モデルを自動で最新に切り替える</label>
     <p class="hint">⚠️ Logfareに個人情報・秘密情報は送らないでください。</p>
@@ -418,6 +447,10 @@ let state = {
   convs: null,
   projects: [],
   projectFilter: "all",
+  spaces: [],
+  ghToken: "",
+  ghRepo: "Ginji001/hachiware-chat-data",
+  _savedAt: 0,
   modelChoice: { chat: "glm-5.3", image: "flux-2-dev" },
   ui: { chat: [], app: [], image: [] },
   history: { chat: [], app: [] },
@@ -434,6 +467,7 @@ const input = $("input");
 const modelSelect = $("modelSelect");
 
 function save() {
+  state._savedAt = Date.now();
   try {
     const copy = structuredClone(state);
     for (const m of ["chat", "app", "image"]) {
@@ -529,6 +563,7 @@ function switchThread(id) {
   const c = state.convs.chat;
   const t = c.list.find((x) => x.id === id);
   if (!t) return;
+  if (openSpaceId) { openSpaceId = null; document.querySelector("footer").hidden = false; }
   c.activeId = id;
   state.ui.chat = t.ui;
   state.history.chat = t.history;
@@ -584,6 +619,286 @@ function migrateProjects(st) {
   }
   return st;
 }
+/* ---------- スペース ----------
+   スペースは「タイトル＋Markdown本文」のメモページ。会話とは別に持ち、
+   サイドバーから開くとメイン画面がスペース表示に切り替わる。
+   あわせて GitHub 同期まわりの既定値（トークン・リポジトリ・最終保存時刻）もここで整える。 */
+function migrateSpaces(st) {
+  if (!Array.isArray(st.spaces)) st.spaces = [];
+  for (const s of st.spaces) {
+    if (!s || typeof s !== "object") continue;
+    if (!s.id) s.id = genThreadId();
+    if (typeof s.title !== "string") s.title = s.title == null ? "" : String(s.title);
+    if (typeof s.body !== "string") s.body = s.body == null ? "" : String(s.body);
+    if (!s.createdAt) s.createdAt = s.updatedAt || Date.now();
+    if (!s.updatedAt) s.updatedAt = s.createdAt;
+  }
+  if (typeof st.ghToken !== "string") st.ghToken = st.ghToken ? String(st.ghToken) : "";
+  if (!st.ghRepo) st.ghRepo = "Ginji001/hachiware-chat-data";
+  if (!st._savedAt) st._savedAt = 0;
+  return st;
+}
+function spaceById(id) { return (state.spaces || []).find((s) => s.id === id) || null; }
+let openSpaceId = null;
+function renderSpaces() {
+  const el = $("spaceList");
+  if (!el) return;
+  el.textContent = "";
+  const items = [...(state.spaces || [])].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  for (const s of items) {
+    const row = document.createElement("div");
+    row.className = "conv" + (s.id === openSpaceId ? " active" : "");
+    const title = document.createElement("span");
+    title.className = "t";
+    title.textContent = s.title || "無題のスペース";
+    const date = document.createElement("span");
+    date.className = "d";
+    const dt = new Date(s.updatedAt || s.createdAt || Date.now());
+    date.textContent = (dt.getMonth() + 1) + "/" + dt.getDate();
+    row.appendChild(title);
+    row.appendChild(date);
+    row.addEventListener("click", () => openSpace(s.id));
+    el.appendChild(row);
+  }
+}
+function openSpace(id) {
+  const s = spaceById(id);
+  if (!s) return;
+  openSpaceId = id;
+  closeSidebar();
+  renderSidebar();
+  renderSpaceView(false);
+}
+function backToChat() {
+  openSpaceId = null;
+  document.querySelector("footer").hidden = false;
+  renderThread();
+  renderSidebar();
+}
+function renderSpaceView(editing) {
+  const s = spaceById(openSpaceId);
+  if (!s) { backToChat(); return; }
+  stopSpeech();
+  document.querySelector("footer").hidden = true;
+  col.textContent = "";
+  const wrap = document.createElement("div");
+  wrap.className = "space-view";
+  const back = document.createElement("button");
+  back.type = "button";
+  back.className = "ghost";
+  back.textContent = "← 会話に戻る";
+  back.addEventListener("click", backToChat);
+  wrap.appendChild(back);
+  if (editing) {
+    const titleInput = document.createElement("input");
+    titleInput.type = "text";
+    titleInput.className = "space-edit-title";
+    titleInput.value = s.title || "";
+    titleInput.placeholder = "タイトル";
+    const bodyInput = document.createElement("textarea");
+    bodyInput.className = "space-edit-body";
+    bodyInput.value = s.body || "";
+    bodyInput.placeholder = "Markdownで書けます";
+    const actions = document.createElement("div");
+    actions.className = "space-actions";
+    const saveBtn = document.createElement("button");
+    saveBtn.type = "button";
+    saveBtn.textContent = "保存";
+    saveBtn.addEventListener("click", () => {
+      s.title = titleInput.value.trim() || "無題のスペース";
+      s.body = bodyInput.value;
+      s.updatedAt = Date.now();
+      save();
+      renderSidebar();
+      renderSpaceView(false);
+    });
+    const cancelBtn = document.createElement("button");
+    cancelBtn.type = "button";
+    cancelBtn.className = "ghost";
+    cancelBtn.textContent = "キャンセル";
+    cancelBtn.addEventListener("click", () => renderSpaceView(false));
+    actions.appendChild(saveBtn);
+    actions.appendChild(cancelBtn);
+    wrap.appendChild(titleInput);
+    wrap.appendChild(bodyInput);
+    wrap.appendChild(actions);
+  } else {
+    const h = document.createElement("h2");
+    h.textContent = s.title || "無題のスペース";
+    wrap.appendChild(h);
+    const actions = document.createElement("div");
+    actions.className = "space-actions";
+    const editBtn = document.createElement("button");
+    editBtn.type = "button";
+    editBtn.textContent = "編集";
+    editBtn.addEventListener("click", () => renderSpaceView(true));
+    const delBtn = document.createElement("button");
+    delBtn.type = "button";
+    delBtn.className = "ghost danger";
+    delBtn.textContent = "削除";
+    delBtn.addEventListener("click", () => {
+      if (!confirm("スペース「" + (s.title || "無題のスペース") + "」を削除しますか？")) return;
+      state.spaces = state.spaces.filter((x) => x.id !== s.id);
+      save();
+      backToChat();
+    });
+    actions.appendChild(editBtn);
+    actions.appendChild(delBtn);
+    wrap.appendChild(actions);
+    const body = document.createElement("div");
+    body.className = "space-body";
+    if ((s.body || "").trim()) renderRich(body, s.body);
+    else body.textContent = "（まだ何も書かれていません。「編集」から書けます）";
+    wrap.appendChild(body);
+  }
+  col.appendChild(wrap);
+  thread.scrollTop = 0;
+}
+function newSpace() {
+  const now = Date.now();
+  const s = { id: genThreadId(), title: "新しいスペース", body: "", createdAt: now, updatedAt: now };
+  if (!Array.isArray(state.spaces)) state.spaces = [];
+  state.spaces.unshift(s);
+  save();
+  openSpace(s.id);
+  renderSpaceView(true);
+}
+
+/* ---------- GitHub同期 ----------
+   会話・スペース・設定を、非公開リポジトリ直下の hachiware-sync.json に保存する。
+   APIキー（Logfare）と GitHub トークンは同期データに含めない（端末ごとの保持）。 */
+const GH_SYNC_FILE = "hachiware-sync.json";
+function b64encodeUtf8(str) { return btoa(unescape(encodeURIComponent(str))); }
+function b64decodeUtf8(b64) { return decodeURIComponent(escape(atob(String(b64).replace(/\s/g, "")))); }
+function buildSyncPayload(st, now) {
+  const copy = structuredClone(st);
+  delete copy.apiKey;
+  delete copy.ghToken;
+  for (const m of ["chat", "app", "image"]) {
+    copy.ui[m] = (copy.ui[m] || []).map((it) =>
+      it.imgUrl && it.imgUrl.startsWith("data:") && it.imgUrl.length > 200000
+        ? { ...it, imgUrl: null, text: (it.text || "") + "\n（画像は端末に保存されませんでした）" }
+        : it
+    );
+  }
+  return { app: "hachiware-chat", version: 1, updatedAt: now, state: copy };
+}
+function ghMsg(text) { const el = $("ghMsg"); if (el) el.textContent = text; }
+function ghRepoParts() {
+  const m = String(state.ghRepo || "").trim().match(/^([^/\s]+)\/([^/\s]+)$/);
+  return m ? { owner: m[1], repo: m[2] } : null;
+}
+function ghHeaders() {
+  return {
+    Authorization: "Bearer " + String(state.ghToken || "").trim(),
+    Accept: "application/vnd.github+json",
+    "Content-Type": "application/json",
+  };
+}
+async function ghApi(path, opts) {
+  const res = await fetch("https://api.github.com" + path, { headers: ghHeaders(), ...(opts || {}) });
+  return res;
+}
+async function githubSave() {
+  if (!String(state.ghToken || "").trim()) { ghMsg("GitHubトークンが未設定です。"); return; }
+  const parts = ghRepoParts();
+  if (!parts) { ghMsg("リポジトリ名は owner/repo の形で入力してください。"); return; }
+  ghMsg("GitHubへ保存しています…");
+  try {
+    const base = "/repos/" + parts.owner + "/" + parts.repo;
+    let repoRes = await ghApi(base);
+    if (repoRes.status === 404) {
+      const createRes = await ghApi("/user/repos", {
+        method: "POST",
+        body: JSON.stringify({ name: parts.repo, private: true, auto_init: true }),
+      });
+      if (!createRes.ok) {
+        const t = await createRes.text().catch(() => "");
+        ghMsg("リポジトリを作成できませんでした（" + createRes.status + "）" + (t ? "：" + t.slice(0, 120) : ""));
+        return;
+      }
+      repoRes = await ghApi(base);
+    }
+    if (!repoRes.ok) { ghMsg("リポジトリを確認できませんでした（" + repoRes.status + "）。トークンとリポジトリ名を確認してください。"); return; }
+    const filePath = base + "/contents/" + GH_SYNC_FILE;
+    let sha = null;
+    const cur = await ghApi(filePath);
+    if (cur.ok) { const j = await cur.json(); sha = j.sha || null; }
+    else if (cur.status !== 404) { ghMsg("既存ファイルを確認できませんでした（" + cur.status + "）。"); return; }
+    const payload = buildSyncPayload(state, Date.now());
+    const body = { message: "hachiware-chat sync", content: b64encodeUtf8(JSON.stringify(payload)) };
+    if (sha) body.sha = sha;
+    const put = await ghApi(filePath, { method: "PUT", body: JSON.stringify(body) });
+    if (!put.ok) {
+      const t = await put.text().catch(() => "");
+      ghMsg("保存できませんでした（" + put.status + "）" + (t ? "：" + t.slice(0, 120) : ""));
+      return;
+    }
+    save();
+    ghMsg("GitHubへ保存しました：" + new Date(payload.updatedAt).toLocaleString());
+  } catch (e) {
+    ghMsg("保存できませんでした：" + (e.message || String(e)));
+  }
+}
+async function githubLoad() {
+  if (!String(state.ghToken || "").trim()) { ghMsg("GitHubトークンが未設定です。"); return; }
+  const parts = ghRepoParts();
+  if (!parts) { ghMsg("リポジトリ名は owner/repo の形で入力してください。"); return; }
+  ghMsg("GitHubから読み込んでいます…");
+  try {
+    const res = await ghApi("/repos/" + parts.owner + "/" + parts.repo + "/contents/" + GH_SYNC_FILE);
+    if (res.status === 404) { ghMsg("GitHubに同期ファイルがありません。先に「GitHubへ保存」をしてください。"); return; }
+    if (!res.ok) { ghMsg("読み込めませんでした（" + res.status + "）。トークンとリポジトリ名を確認してください。"); return; }
+    const j = await res.json();
+    const payload = JSON.parse(b64decodeUtf8(j.content || ""));
+    if (!payload || payload.app !== "hachiware-chat" || !payload.state || !payload.state.ui || !payload.state.history) {
+      ghMsg("同期ファイルの形式が違います。読み込みませんでした。");
+      return;
+    }
+    if (!(payload.updatedAt > (state._savedAt || 0))) {
+      ghMsg("GitHub側のほうが古いので読み込みませんでした。");
+      return;
+    }
+    if (!confirm("GitHubの内容（" + new Date(payload.updatedAt).toLocaleString() + " 保存）で、現在の会話と設定を置き換えます。よろしいですか？（APIキーとGitHubトークンはこの端末のまま残ります）")) {
+      ghMsg("読み込みをやめました。");
+      return;
+    }
+    const keepKey = state.apiKey;
+    const keepGhToken = state.ghToken;
+    const keepGhRepo = state.ghRepo;
+    state = Object.assign(
+      { mode: "chat", autoUpgrade: true, routeChoice: "auto",
+        modelChoice: { chat: "glm-5.3", image: "flux-2-dev" },
+        ui: { chat: [], app: [], image: [] }, history: { chat: [], app: [] },
+        projects: [], projectFilter: "all", spaces: [],
+        ghToken: "", ghRepo: "Ginji001/hachiware-chat-data", _savedAt: 0 },
+      payload.state
+    );
+    state.apiKey = keepKey;
+    state.ghToken = keepGhToken;
+    state.ghRepo = keepGhRepo;
+    migrateConvs(state);
+    unifyState(state);
+    migrateProjects(state);
+    migrateSpaces(state);
+    linkActiveThreads();
+    openSpaceId = null;
+    document.querySelector("footer").hidden = false;
+    save();
+    $("apiKeyInput").value = state.apiKey || "";
+    $("ghTokenInput").value = state.ghToken || "";
+    $("ghRepoInput").value = state.ghRepo || "";
+    fillModelSelect();
+    renderThread();
+    renderSidebar();
+    updateKeyNotice();
+    loadModels();
+    ghMsg("GitHubから読み込みました。会話と設定を置き換えました。");
+  } catch (e) {
+    ghMsg("読み込めませんでした：" + (e.message || String(e)));
+  }
+}
+
 function projectById(id) { return state.projects.find((p) => p.id === id) || null; }
 function activeThreadProject() {
   const t = activeThread();
@@ -623,6 +938,7 @@ function updateProjBar() {
 function buildExportData(st) {
   const copy = structuredClone(st);
   delete copy.apiKey;
+  delete copy.ghToken;
   for (const m of ["chat", "app", "image"]) {
     copy.ui[m] = (copy.ui[m] || []).map((it) =>
       it.imgUrl && it.imgUrl.startsWith("data:") && it.imgUrl.length > 200000
@@ -1145,6 +1461,7 @@ function drawItem(item) {
 }
 
 function renderThread() {
+  if (openSpaceId) return; // スペース表示中は会話画面で上書きしない
   stopSpeech();
   updateProjBar();
   col.textContent = "";
@@ -1161,6 +1478,7 @@ function renderThread() {
 let searchQuery = "";
 function renderSidebar() {
   renderProjects();
+  renderSpaces();
   const pr = state.projectFilter !== "all" && state.projectFilter !== "none" ? projectById(state.projectFilter) : null;
   $("convHead").textContent = "会話" + (pr ? "（" + pr.name + "）" : state.projectFilter === "none" ? "（プロジェクトなし）" : "");
   const listEl = $("convList");
@@ -1844,17 +2162,34 @@ window.open(URL.createObjectURL(blob), "_blank");
 /* 設定 */
 $("settingsBtn").addEventListener("click", () => {
 $("apiKeyInput").value = state.apiKey || "";
+$("ghTokenInput").value = state.ghToken || "";
+$("ghRepoInput").value = state.ghRepo || "Ginji001/hachiware-chat-data";
 $("autoUpgradeInput").checked = state.autoUpgrade!== false;
 $("settings").showModal();
 });
 $("saveSettings").addEventListener("click", () => {
 state.apiKey = $("apiKeyInput").value.trim();
+state.ghToken = $("ghTokenInput").value.trim();
+state.ghRepo = $("ghRepoInput").value.trim() || "Ginji001/hachiware-chat-data";
 state.autoUpgrade = $("autoUpgradeInput").checked;
 save();
 updateKeyNotice();
 $("settings").close();
 loadModels(); // キー保存後にモデル一覧を取り直す（解放済みの上位モデルを表示するため）
 });
+$("ghSaveBtn").addEventListener("click", async () => {
+state.ghToken = $("ghTokenInput").value.trim();
+state.ghRepo = $("ghRepoInput").value.trim() || "Ginji001/hachiware-chat-data";
+save();
+await githubSave();
+});
+$("ghLoadBtn").addEventListener("click", async () => {
+state.ghToken = $("ghTokenInput").value.trim();
+state.ghRepo = $("ghRepoInput").value.trim() || "Ginji001/hachiware-chat-data";
+save();
+await githubLoad();
+});
+$("newSpaceBtn").addEventListener("click", () => newSpace());
 $("copyKeyBtn").addEventListener("click", async () => {
 const key = $("apiKeyInput").value.trim();
 const msg = $("copyKeyMsg");
@@ -1880,7 +2215,7 @@ a.href = URL.createObjectURL(blob);
 a.download = name;
 a.click();
 setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-$("syncMsg").textContent = "書き出しました：" + name + "（APIキーは含まれていません）";
+$("syncMsg").textContent = "書き出しました：" + name + "（APIキーとGitHubトークンは含まれていません）";
 });
 $("importBtn").addEventListener("click", () => $("importFile").click());
 $("importFile").addEventListener("change", async () => {
@@ -1889,19 +2224,25 @@ $("importFile").value = "";
 if (!f) return;
 try {
 const imported = parseImportData(await f.text());
-if (!confirm("現在の会話と設定を、読み込んだ内容で置き換えます。よろしいですか？（APIキーはこの端末のまま残ります）")) return;
+if (!confirm("現在の会話と設定を、読み込んだ内容で置き換えます。よろしいですか？（APIキーとGitHubトークンはこの端末のまま残ります）")) return;
 const keepKey = state.apiKey;
+const keepGhToken = state.ghToken;
 state = Object.assign(
 { mode: "chat", autoUpgrade: true, routeChoice: "auto",
 modelChoice: { chat: "glm-5.3", image: "flux-2-dev"},
 ui: { chat: [], app: [], image: []}, history: { chat: [], app: []},
-projects: [], projectFilter: "all"},
+projects: [], projectFilter: "all", spaces: [],
+ghToken: "", ghRepo: "Ginji001/hachiware-chat-data", _savedAt: 0},
 imported
 );
 state.apiKey = keepKey;
+state.ghToken = keepGhToken;
 migrateConvs(state);
 unifyState(state);
 migrateProjects(state);
+migrateSpaces(state);
+openSpaceId = null;
+document.querySelector("footer").hidden = false;
 linkActiveThreads();
 save();
 fillModelSelect();
@@ -1951,6 +2292,7 @@ $("projectDlg").close();
 migrateConvs(state);
 unifyState(state);
 migrateProjects(state);
+migrateSpaces(state);
 linkActiveThreads();
 updateKeyNotice();
 fillModelSelect();
