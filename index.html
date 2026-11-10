@@ -93,6 +93,15 @@ header .left { display: flex; align-items: center; gap: 4px; }
   border-radius: 12px; padding: 10px 12px; font-size: .95rem;
 }
 .side-row:hover { background: var(--hover); }
+.side-row.active { background: var(--active); font-weight: 600; }
+
+/* フィード／アイディアのページ */
+.page-card { border: 1px solid var(--border); border-radius: 14px; padding: 12px 14px; margin: 10px 0; }
+.page-card h3 { margin: 2px 0 6px; font-size: 1.02rem; line-height: 1.45; }
+.page-card .d { color: var(--muted); font-size: .78rem; }
+.page-status { color: var(--muted); font-size: .85rem; margin-left: 8px; }
+.page-brief { min-height: 64px !important; }
+.page-empty { color: var(--muted); margin: 14px 0; line-height: 1.7; }
 #searchInput {
   width: 100%; border: 1px solid var(--border); border-radius: 10px;
   background: var(--bg); padding: 8px 10px; font-size: .9rem;
@@ -293,6 +302,8 @@ dialog { border: 0; border-radius: 20px; padding: 0; max-width: 480px; width: 92
     <button id="sideCloseBtn" class="ghost" type="button" style="padding:4px 10px">✕</button>
   </div>
   <button id="newChatBtn" class="side-row" type="button">✏️ 新しいチャット</button>
+  <button id="feedBtn" class="side-row" type="button">📰 フィード</button>
+  <button id="ideasBtn" class="side-row" type="button">💡 アイディア</button>
   <input id="searchInput" type="search" placeholder="🔍 会話を検索">
   <div class="side-sec"><span>プロジェクト</span><button id="newProjectBtn" class="ghost" type="button">＋ 追加</button></div>
   <div id="projectList"></div>
@@ -365,7 +376,7 @@ dialog { border: 0; border-radius: 20px; padding: 0; max-width: 480px; width: 92
         <button id="ghLoadBtn" type="button" class="ghost">⬇ GitHubから読み込む</button>
       </div>
       <p class="hint" id="ghMsg"></p>
-      <p class="hint">会話・スペース・設定をリポジトリ直下の hachiware-sync.json に保存します。APIキーとトークンは同期に含まれません。</p>
+      <p class="hint">会話・スペース・フィード・アイディア・設定をリポジトリ直下の hachiware-sync.json に保存します。APIキーとトークンは同期に含まれません。</p>
     </div>
     <label><input id="autoUpgradeInput" type="checkbox" checked style="width:auto"> モデルを自動で最新に切り替える</label>
     <p class="hint">⚠️ Logfareに個人情報・秘密情報は送らないでください。</p>
@@ -563,7 +574,7 @@ function switchThread(id) {
   const c = state.convs.chat;
   const t = c.list.find((x) => x.id === id);
   if (!t) return;
-  if (openSpaceId) { openSpaceId = null; document.querySelector("footer").hidden = false; }
+  if (openSpaceId || pageView) { openSpaceId = null; pageView = null; document.querySelector("footer").hidden = false; }
   c.activeId = id;
   state.ui.chat = t.ui;
   state.history.chat = t.history;
@@ -638,6 +649,30 @@ function migrateSpaces(st) {
   if (!st._savedAt) st._savedAt = 0;
   return st;
 }
+/* ---------- フィード／アイディアのデータ整備 ----------
+   フィード投稿・アイディアカード・関心メモ（フィードの指示文）を state に持つ。
+   会話・スペースと同じく、書き出し・読み込み・GitHub同期の対象に自動で入る。 */
+const DEFAULT_FEED_BRIEF = "化粧品・スキンケアの科学、AIツールの活用、noteの記事づくり、日々の気づきなど、短く読めて役に立つ話題。";
+function migratePages(st) {
+  if (!Array.isArray(st.feedPosts)) st.feedPosts = [];
+  for (const p of st.feedPosts) {
+    if (!p || typeof p !== "object") continue;
+    if (!p.id) p.id = genThreadId();
+    if (typeof p.title !== "string") p.title = p.title == null ? "" : String(p.title);
+    if (typeof p.body !== "string") p.body = p.body == null ? "" : String(p.body);
+    if (!p.createdAt) p.createdAt = Date.now();
+  }
+  if (!Array.isArray(st.ideaCards)) st.ideaCards = [];
+  for (const c of st.ideaCards) {
+    if (!c || typeof c !== "object") continue;
+    if (!c.id) c.id = genThreadId();
+    if (typeof c.title !== "string") c.title = c.title == null ? "" : String(c.title);
+    if (typeof c.detail !== "string") c.detail = c.detail == null ? "" : String(c.detail);
+    if (!c.createdAt) c.createdAt = Date.now();
+  }
+  if (typeof st.feedBrief !== "string" || !st.feedBrief) st.feedBrief = DEFAULT_FEED_BRIEF;
+  return st;
+}
 function spaceById(id) { return (state.spaces || []).find((s) => s.id === id) || null; }
 let openSpaceId = null;
 function renderSpaces() {
@@ -665,15 +700,19 @@ function openSpace(id) {
   const s = spaceById(id);
   if (!s) return;
   openSpaceId = id;
+  pageView = null;
   closeSidebar();
   renderSidebar();
+  setNav();
   renderSpaceView(false);
 }
 function backToChat() {
   openSpaceId = null;
+  pageView = null;
   document.querySelector("footer").hidden = false;
   renderThread();
   renderSidebar();
+  setNav();
 }
 function renderSpaceView(editing) {
   const s = spaceById(openSpaceId);
@@ -762,6 +801,276 @@ function newSpace() {
   save();
   openSpace(s.id);
   renderSpaceView(true);
+}
+
+/* ---------- フィード／アイディア（Museと同じ考え方） ----------
+   フィード: AIがユーザーの関心メモに沿って短い投稿を書き、たまっていく読み物の画面。
+   アイディア: AIが次にやることのカードを出し、「チャットで始める」で会話にできる画面。
+   どちらもメイン画面を切り替えて表示し、入力欄は隠す（スペースと同じ作り）。 */
+let pageView = null; // null | "feed" | "ideas"
+function setNav() {
+  const f = $("feedBtn");
+  const i = $("ideasBtn");
+  if (f) f.classList.toggle("active", pageView === "feed");
+  if (i) i.classList.toggle("active", pageView === "ideas");
+}
+
+/* フィード／アイディア生成用の、ストリーミングしないモデル呼び出し */
+async function callModelText(systemText, userText) {
+  const res = await fetch(API + "/chat/completions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer " + getKey() },
+    body: JSON.stringify({
+      model: state.modelChoice.chat,
+      messages: [
+        { role: "system", content: systemText },
+        { role: "user", content: userText },
+      ],
+      stream: false,
+    }),
+  });
+  if (!res.ok) throw new Error(apiErrorMessage(res.status, await readError(res)));
+  const j = await res.json();
+  return j?.choices?.[0]?.message?.content || j?.choices?.[0]?.message?.reasoning_content || "";
+}
+
+function pageHead(wrap, titleText) {
+  const back = document.createElement("button");
+  back.type = "button";
+  back.className = "ghost";
+  back.textContent = "← 会話に戻る";
+  back.addEventListener("click", backToChat);
+  wrap.appendChild(back);
+  const h = document.createElement("h2");
+  h.textContent = titleText;
+  wrap.appendChild(h);
+}
+function fmtDate(ts) {
+  const dt = new Date(ts || Date.now());
+  return (dt.getMonth() + 1) + "/" + dt.getDate() + " " + String(dt.getHours()).padStart(2, "0") + ":" + String(dt.getMinutes()).padStart(2, "0");
+}
+
+function openFeed() {
+  openSpaceId = null;
+  pageView = "feed";
+  closeSidebar();
+  renderSidebar();
+  setNav();
+  renderFeedView();
+}
+function renderFeedView() {
+  stopSpeech();
+  document.querySelector("footer").hidden = true;
+  col.textContent = "";
+  const wrap = document.createElement("div");
+  wrap.className = "space-view";
+  pageHead(wrap, "フィード");
+  const briefLabel = document.createElement("p");
+  briefLabel.className = "d";
+  briefLabel.style.color = "var(--muted)";
+  briefLabel.textContent = "関心メモ（この内容に沿ってAIが投稿を書きます）";
+  wrap.appendChild(briefLabel);
+  const brief = document.createElement("textarea");
+  brief.className = "space-edit-body page-brief";
+  brief.value = state.feedBrief || "";
+  wrap.appendChild(brief);
+  const row = document.createElement("div");
+  row.className = "space-actions";
+  const briefSave = document.createElement("button");
+  briefSave.type = "button";
+  briefSave.className = "ghost";
+  briefSave.textContent = "メモを保存";
+  briefSave.addEventListener("click", () => {
+    state.feedBrief = brief.value.trim() || DEFAULT_FEED_BRIEF;
+    save();
+    briefSave.textContent = "✓ 保存しました";
+    setTimeout(() => { briefSave.textContent = "メモを保存"; }, 1400);
+  });
+  const gen = document.createElement("button");
+  gen.type = "button";
+  gen.textContent = "✍ 新しい投稿を書く";
+  const status = document.createElement("span");
+  status.className = "page-status";
+  gen.addEventListener("click", () => genFeedPost(gen, status));
+  row.appendChild(gen);
+  row.appendChild(briefSave);
+  row.appendChild(status);
+  wrap.appendChild(row);
+  const posts = state.feedPosts || [];
+  if (!posts.length) {
+    const empty = document.createElement("p");
+    empty.className = "page-empty";
+    empty.textContent = "まだ投稿がありません。「✍ 新しい投稿を書く」を押すと、AIが関心メモに沿って1本書きます。";
+    wrap.appendChild(empty);
+  }
+  for (const p of posts) {
+    const card = document.createElement("div");
+    card.className = "page-card";
+    const d = document.createElement("div");
+    d.className = "d";
+    d.textContent = fmtDate(p.createdAt);
+    card.appendChild(d);
+    const h = document.createElement("h3");
+    h.textContent = p.title || "無題";
+    card.appendChild(h);
+    const body = document.createElement("div");
+    body.className = "space-body";
+    renderRich(body, p.body || "");
+    card.appendChild(body);
+    const acts = document.createElement("div");
+    acts.className = "space-actions";
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "ghost danger";
+    del.textContent = "削除";
+    del.addEventListener("click", () => {
+      if (!confirm("この投稿を削除しますか？")) return;
+      state.feedPosts = state.feedPosts.filter((x) => x.id !== p.id);
+      save();
+      renderFeedView();
+    });
+    acts.appendChild(del);
+    card.appendChild(acts);
+    wrap.appendChild(card);
+  }
+  col.appendChild(wrap);
+  thread.scrollTop = 0;
+}
+async function genFeedPost(btn, statusEl) {
+  if (!getKey()) { $("settings").showModal(); return; }
+  btn.disabled = true;
+  statusEl.textContent = "書いています…";
+  try {
+    const past = (state.feedPosts || []).slice(0, 12).map((p) => "・" + (p.title || "")).join("\n");
+    const sys =
+      "あなたはユーザーの個人フィードの書き手です。関心メモに沿って、短い読み物の投稿を1本だけ書いてください。" +
+      "形式: 1行目にタイトルだけを書く。空行を1つ挟み、本文を300〜600字で書く（Markdown可）。" +
+      "過去の投稿と話題が重ならないようにしてください。自分の制限を並べたり、謝ったり、進め方の選択肢を提示したりしないでください。";
+    const user = "関心メモ:\n" + (state.feedBrief || "") + (past ? "\n\n過去の投稿タイトル:\n" + past : "");
+    const out = (await callModelText(sys, user)).trim();
+    if (!out) throw new Error("空の応答でした。もう一度お試しください。");
+    const lines = out.split("\n");
+    const title = (lines[0] || "").replace(/^#+\s*/, "").trim() || "無題";
+    const body = lines.slice(1).join("\n").trim();
+    state.feedPosts.unshift({ id: genThreadId(), title, body, createdAt: Date.now() });
+    save();
+    if (pageView === "feed") renderFeedView();
+  } catch (e) {
+    statusEl.textContent = "失敗しました：" + (e.message || String(e));
+    btn.disabled = false;
+  }
+}
+
+function openIdeas() {
+  openSpaceId = null;
+  pageView = "ideas";
+  closeSidebar();
+  renderSidebar();
+  setNav();
+  renderIdeasView();
+}
+function renderIdeasView() {
+  stopSpeech();
+  document.querySelector("footer").hidden = true;
+  col.textContent = "";
+  const wrap = document.createElement("div");
+  wrap.className = "space-view";
+  pageHead(wrap, "アイディア");
+  const row = document.createElement("div");
+  row.className = "space-actions";
+  const gen = document.createElement("button");
+  gen.type = "button";
+  gen.textContent = "💡 新しいアイディアをもらう";
+  const status = document.createElement("span");
+  status.className = "page-status";
+  gen.addEventListener("click", () => genIdeas(gen, status));
+  row.appendChild(gen);
+  row.appendChild(status);
+  wrap.appendChild(row);
+  const cards = state.ideaCards || [];
+  if (!cards.length) {
+    const empty = document.createElement("p");
+    empty.className = "page-empty";
+    empty.textContent = "まだアイディアがありません。「💡 新しいアイディアをもらう」を押すと、AIが3つ提案します。";
+    wrap.appendChild(empty);
+  }
+  for (const c of cards) {
+    const card = document.createElement("div");
+    card.className = "page-card";
+    const d = document.createElement("div");
+    d.className = "d";
+    d.textContent = fmtDate(c.createdAt);
+    card.appendChild(d);
+    const h = document.createElement("h3");
+    h.textContent = c.title || "無題";
+    card.appendChild(h);
+    if (c.detail) {
+      const body = document.createElement("div");
+      body.className = "space-body";
+      renderRich(body, c.detail);
+      card.appendChild(body);
+    }
+    const acts = document.createElement("div");
+    acts.className = "space-actions";
+    const start = document.createElement("button");
+    start.type = "button";
+    start.textContent = "チャットで始める";
+    start.addEventListener("click", () => startIdeaChat(c));
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "ghost danger";
+    del.textContent = "消す";
+    del.addEventListener("click", () => {
+      state.ideaCards = state.ideaCards.filter((x) => x.id !== c.id);
+      save();
+      renderIdeasView();
+    });
+    acts.appendChild(start);
+    acts.appendChild(del);
+    card.appendChild(acts);
+    wrap.appendChild(card);
+  }
+  col.appendChild(wrap);
+  thread.scrollTop = 0;
+}
+async function genIdeas(btn, statusEl) {
+  if (!getKey()) { $("settings").showModal(); return; }
+  btn.disabled = true;
+  statusEl.textContent = "考えています…";
+  try {
+    const titles = (state.convs?.chat?.list || []).slice(0, 10).map((t) => "・" + (t.title || "")).join("\n");
+    const sys =
+      "あなたはユーザーのアイディア係です。関心メモと最近の会話タイトルをもとに、具体的でやってみたくなるアイディアを3つ提案してください。" +
+      '出力はJSON配列だけにしてください: [{"title":"短いタイトル","detail":"1〜2文の説明"}] の形。コードブロックや説明文は付けないでください。';
+    const user = "関心メモ:\n" + (state.feedBrief || "") + (titles ? "\n\n最近の会話:\n" + titles : "");
+    const out = await callModelText(sys, user);
+    let arr = [];
+    const m = out.match(/\[[\s\S]*\]/);
+    if (m) { try { arr = JSON.parse(m[0]); } catch (_) { arr = []; } }
+    if (!Array.isArray(arr) || !arr.length) {
+      arr = out.split("\n").map((s) => s.replace(/^[\s\-・*\d.、)]+/, "").trim()).filter(Boolean).slice(0, 3).map((t) => ({ title: t, detail: "" }));
+    }
+    let added = 0;
+    for (const it of arr.slice(0, 3)) {
+      const title = String((it && it.title) || "").trim();
+      if (!title) continue;
+      state.ideaCards.unshift({ id: genThreadId(), title, detail: String((it && it.detail) || "").trim(), createdAt: Date.now() });
+      added++;
+    }
+    if (!added) throw new Error("うまく読み取れませんでした。もう一度お試しください。");
+    save();
+    if (pageView === "ideas") renderIdeasView();
+  } catch (e) {
+    statusEl.textContent = "失敗しました：" + (e.message || String(e));
+    btn.disabled = false;
+  }
+}
+function startIdeaChat(card) {
+  newThread();
+  input.value = card.title + (card.detail ? "：" + card.detail : "");
+  fitInput();
+  closeSidebar();
+  input.focus();
 }
 
 /* ---------- GitHub同期 ----------
@@ -881,6 +1190,7 @@ async function githubLoad() {
     unifyState(state);
     migrateProjects(state);
     migrateSpaces(state);
+    migratePages(state);
     linkActiveThreads();
     openSpaceId = null;
     document.querySelector("footer").hidden = false;
@@ -1461,7 +1771,7 @@ function drawItem(item) {
 }
 
 function renderThread() {
-  if (openSpaceId) return; // スペース表示中は会話画面で上書きしない
+  if (openSpaceId || pageView) return; // スペース／フィード／アイディア表示中は会話画面で上書きしない
   stopSpeech();
   updateProjBar();
   col.textContent = "";
@@ -2190,6 +2500,8 @@ save();
 await githubLoad();
 });
 $("newSpaceBtn").addEventListener("click", () => newSpace());
+$("feedBtn").addEventListener("click", openFeed);
+$("ideasBtn").addEventListener("click", openIdeas);
 $("copyKeyBtn").addEventListener("click", async () => {
 const key = $("apiKeyInput").value.trim();
 const msg = $("copyKeyMsg");
@@ -2241,6 +2553,7 @@ migrateConvs(state);
 unifyState(state);
 migrateProjects(state);
 migrateSpaces(state);
+migratePages(state);
 openSpaceId = null;
 document.querySelector("footer").hidden = false;
 linkActiveThreads();
@@ -2293,6 +2606,7 @@ migrateConvs(state);
 unifyState(state);
 migrateProjects(state);
 migrateSpaces(state);
+migratePages(state);
 linkActiveThreads();
 updateKeyNotice();
 fillModelSelect();
