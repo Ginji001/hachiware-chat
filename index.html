@@ -271,10 +271,10 @@ footer { padding: 8px 16px calc(10px + env(safe-area-inset-bottom)); max-width: 
 #pvFrame { flex: 1; border: 0; width: 100%; background: #fff; }
 
 /* ===== ダイアログ ===== */
-dialog { border: 0; border-radius: 20px; padding: 0; max-width: 480px; width: 92%; box-shadow: 0 12px 40px rgba(0,0,0,.18); background: var(--bg); color: var(--text); }
-.settings-box { padding: 22px; display: grid; gap: 12px; }
-.settings-box input[type="password"], .settings-box input[type="text"] { width: 100%; border: 1px solid var(--border); border-radius: 12px; padding: 8px 10px; background: var(--bg); }
-.settings-box .row { display: flex; gap: 8px; justify-content: flex-end; align-items: center; }
+dialog { border: 0; border-radius: 20px; padding: 0; max-width: 480px; width: 92%; max-height: 88dvh; overflow-y: auto; box-shadow: 0 12px 40px rgba(0,0,0,.18); background: var(--bg); color: var(--text); }
+.settings-box { padding: 18px; display: grid; gap: 10px; }
+.settings-box input[type="password"], .settings-box input[type="text"] { width: 100%; border: 1px solid var(--border); border-radius: 12px; padding: 8px 10px; background: var(--bg); font-size: 16px; }
+.settings-box .row { display: flex; gap: 8px; justify-content: flex-end; align-items: center; flex-wrap: wrap; }
 .hint { color: var(--muted); font-size: .78rem; margin: 0; }
 .danger { color: #c0392b !important; border-color: #e5b4b4 !important; }
 #projInstr { width: 100%; min-height: 180px; resize: vertical; line-height: 1.6; border: 1px solid var(--border); border-radius: 12px; padding: 8px 10px; background: var(--bg); }
@@ -351,10 +351,9 @@ dialog { border: 0; border-radius: 20px; padding: 0; max-width: 480px; width: 92
   <form method="dialog" class="settings-box">
     <h2 style="margin:0">設定</h2>
     <label>Logfare APIキー
-      <input id="apiKeyInput" type="password" autocomplete="off" placeholder="Logfareで発行されたキー">
+      <input id="apiKeyInput" type="password" autocomplete="off" placeholder="キー">
     </label>
-    <p class="hint"><button id="copyKeyBtn" type="button">📋 保存済みキーをコピー</button> <span id="copyKeyMsg"></span></p>
-    <p class="hint">キーは <a href="https://logfare.ai/register" target="_blank" rel="noopener">logfare.ai/register</a> で発行できます。</p>
+    <p class="hint"><button id="copyKeyBtn" type="button">📋 キーをコピー</button> <span id="copyKeyMsg"></span> <a href="https://logfare.ai/register" target="_blank" rel="noopener">キー発行</a></p>
     <div>
       <div class="row" style="justify-content:flex-start">
         <button id="exportBtn" type="button" class="ghost">⬇ 書き出す</button>
@@ -366,20 +365,21 @@ dialog { border: 0; border-radius: 20px; padding: 0; max-width: 480px; width: 92
     <div>
       <h3 style="margin:0 0 8px">GitHub同期</h3>
       <label>GitHubトークン
-        <input id="ghTokenInput" type="password" autocomplete="off" placeholder="GitHubのトークン（この端末だけに保存）">
+        <input id="ghTokenInput" type="password" autocomplete="off" placeholder="トークン">
       </label>
-      <label>リポジトリ（owner/repo）
-        <input id="ghRepoInput" type="text" placeholder="Ginji001/hachiware-chat-data">
+      <p class="hint"><button id="copyGhTokenBtn" type="button">📋 トークンをコピー</button> <span id="copyGhTokenMsg"></span></p>
+      <label>リポジトリ
+        <input id="ghRepoInput" type="text" placeholder="owner/repo">
       </label>
       <div class="row" style="justify-content:flex-start">
-        <button id="ghSaveBtn" type="button" class="ghost">⬆ GitHubへ保存</button>
-        <button id="ghLoadBtn" type="button" class="ghost">⬇ GitHubから読み込む</button>
+        <button id="ghSaveBtn" type="button" class="ghost">⬆ GitHub保存</button>
+        <button id="ghLoadBtn" type="button" class="ghost">⬇ GitHub読込</button>
       </div>
       <p class="hint" id="ghMsg"></p>
-      <p class="hint">会話・スペース・フィード・アイディア・設定をリポジトリ直下の hachiware-sync.json に保存します。APIキーとトークンは同期に含まれません。</p>
+      <p class="hint">同期ファイル: hachiware-sync.json（キー類は除く）</p>
     </div>
-    <label><input id="autoUpgradeInput" type="checkbox" checked style="width:auto"> モデルを自動で最新に切り替える</label>
-    <p class="hint">⚠️ Logfareに個人情報・秘密情報は送らないでください。</p>
+    <label><input id="autoUpgradeInput" type="checkbox" checked style="width:auto"> モデルを自動で最新にする</label>
+    <p class="hint">⚠️ 個人情報・秘密情報は送らない</p>
     <div class="row">
       <button id="saveSettings" type="button">保存</button>
       <button value="cancel" type="submit" class="ghost">閉じる</button>
@@ -2515,6 +2515,20 @@ let okCopy = false;
 try { okCopy = document.execCommand("copy");} catch (_) { /* noop */}
 inp.type = orig;
 msg.textContent = okCopy? "コピーしました（" + key.length + "文字）": "コピーに失敗しました";
+});
+$("copyGhTokenBtn").addEventListener("click", async () => {
+const token = $("ghTokenInput").value.trim();
+const msg = $("copyGhTokenMsg");
+if (!token) { msg.textContent = "トークンが保存されていません"; return;}
+if (await copyText(token)) { msg.textContent = "コピーしました（" + token.length + "文字）"; return;}
+const inp = $("ghTokenInput");
+const orig = inp.type;
+inp.type = "text";
+inp.select();
+let okCopy = false;
+try { okCopy = document.execCommand("copy");} catch (_) { /* noop */}
+inp.type = orig;
+msg.textContent = okCopy? "コピーしました（" + token.length + "文字）": "コピーに失敗しました";
 });
 $("exportBtn").addEventListener("click", () => {
 const data = buildExportData(state);
