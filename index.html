@@ -360,10 +360,6 @@ dialog { border: 0; border-radius: 20px; padding: 0; max-width: 480px; width: 92
         <button id="importBtn" type="button" class="ghost">⬆ 読み込む</button>
         <input id="importFile" type="file" accept=".json,application/json" hidden>
       </div>
-      <div class="row" style="justify-content:flex-start">
-        <button id="moveBtn" type="button" class="ghost">🔑 引っ越しファイルを作る</button>
-      </div>
-      <p class="hint">新しい端末へ移すとき用です。会話とAPIキーを合言葉で暗号化して、1つのファイルにします。読み込みは「⬆ 読み込む」から同じファイルを選び、合言葉を入れます。</p>
       <p class="hint" id="syncMsg"></p>
     </div>
     <label><input id="autoUpgradeInput" type="checkbox" checked style="width:auto"> モデルを自動で最新にする</label>
@@ -1252,48 +1248,6 @@ function parseImportData(text) {
     throw new Error("ハチワレチャットの書き出しファイルではありません");
   }
   return d.state;
-}
-
-/* ---------- 引っ越しファイル（会話＋APIキーを合言葉で暗号化して1ファイルで運ぶ） ---------- */
-function bufToB64(buf) {
-  let s = "";
-  const b = new Uint8Array(buf);
-  for (let i = 0; i < b.length; i += 0x8000) {
-    s += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000));
-  }
-  return btoa(s);
-}
-function b64ToBuf(s) {
-  const bin = atob(s);
-  const b = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) b[i] = bin.charCodeAt(i);
-  return b.buffer;
-}
-async function deriveMoveKey(pw, salt) {
-  const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(pw), "PBKDF2", false, ["deriveKey"]);
-  return crypto.subtle.deriveKey(
-    { name: "PBKDF2", salt: salt, iterations: 150000, hash: "SHA-256" },
-    base, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
-}
-async function encryptMoveData(obj, pw) {
-  const salt = crypto.getRandomValues(new Uint8Array(16));
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const key = await deriveMoveKey(pw, salt);
-  const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv: iv }, key,
-    new TextEncoder().encode(JSON.stringify(obj)));
-  return { app: "hachiware-chat", kind: "move", version: 1,
-    salt: bufToB64(salt), iv: bufToB64(iv), data: bufToB64(ct) };
-}
-async function decryptMoveData(fileObj, pw) {
-  try {
-    const key = await deriveMoveKey(pw, new Uint8Array(b64ToBuf(fileObj.salt)));
-    const pt = await crypto.subtle.decrypt(
-      { name: "AES-GCM", iv: new Uint8Array(b64ToBuf(fileObj.iv)) },
-      key, b64ToBuf(fileObj.data));
-    return JSON.parse(new TextDecoder().decode(pt));
-  } catch (_) {
-    throw new Error("合言葉が違うか、ファイルが壊れています");
-  }
 }
 
 /* ---------- 描画（XSS対策として textContent ベースで組み立てる） ---------- */
@@ -2543,63 +2497,14 @@ a.click();
 setTimeout(() => URL.revokeObjectURL(a.href), 4000);
 $("syncMsg").textContent = "書き出しました：" + name + "（APIキーは含まれていません）";
 });
-$("moveBtn").addEventListener("click", async () => {
-try {
-if (!window.crypto || !crypto.subtle) {
-$("syncMsg").textContent = "この開き方では暗号化できません。公開ページ（https://ginji001.github.io/hachiware-chat/）で開いてください。";
-return;
-}
-const key = $("apiKeyInput").value.trim();
-if (!key) { $("syncMsg").textContent = "先にAPIキーを入れてください。"; return;}
-const pw = prompt("引っ越し用の合言葉を決めてください（4文字以上）。\n新しい端末で読み込むときにも、同じ合言葉が必要です。");
-if (!pw) return;
-if (pw.length < 4) { $("syncMsg").textContent = "合言葉は4文字以上にしてください。作り直してください。"; return;}
-const pw2 = prompt("確認のため、もう一度同じ合言葉を入れてください。");
-if (pw2 !== pw) { $("syncMsg").textContent = "合言葉が一致しませんでした。作り直してください。"; return;}
-$("syncMsg").textContent = "引っ越しファイルを作っています…";
-const data = buildExportData(state);
-data.state.apiKey = key;
-const enc = await encryptMoveData(data, pw);
-const now = new Date();
-const pad = (n) => String(n).padStart(2, "0");
-const name = "hachiware-chat-move-" + now.getFullYear() + pad(now.getMonth() + 1) + pad(now.getDate()) + "-" + pad(now.getHours()) + pad(now.getMinutes()) + ".json";
-const blob = new Blob([JSON.stringify(enc, null, 2)], { type: "application/json;charset=utf-8"});
-const a = document.createElement("a");
-a.href = URL.createObjectURL(blob);
-a.download = name;
-a.click();
-setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-$("syncMsg").textContent = "引っ越しファイルを作りました：" + name + "（読み込むときに合言葉が必要です）";
-} catch (e) {
-$("syncMsg").textContent = "作れませんでした：" + (e.message || String(e));
-}
-});
 $("importBtn").addEventListener("click", () => $("importFile").click());
 $("importFile").addEventListener("change", async () => {
 const f = $("importFile").files[0];
 $("importFile").value = "";
 if (!f) return;
 try {
-const rawText = await f.text();
-let imported = null;
-let moveKey = null;
-let head = null;
-try { head = JSON.parse(rawText); } catch (_) { /* 通常の読み込み側で判定する */ }
-if (head && head.app === "hachiware-chat" && head.kind === "move") {
-const pw = prompt("引っ越しファイルです。作ったときの合言葉を入れてください。");
-if (!pw) { $("syncMsg").textContent = "読み込みをやめました。"; return;}
-const plain = await decryptMoveData(head, pw);
-if (!plain || !plain.state || !plain.state.ui || !plain.state.history) {
-throw new Error("引っ越しファイルの内容が正しくありません");
-}
-imported = plain.state;
-moveKey = imported.apiKey || null;
-} else {
-imported = parseImportData(rawText);
-}
-if (!confirm(moveKey
-? "現在の会話と設定を、読み込んだ内容で置き換えます。APIキーも一緒に移ります。よろしいですか？"
-: "現在の会話と設定を、読み込んだ内容で置き換えます。よろしいですか？（APIキーはこの端末のまま残ります）")) return;
+const imported = parseImportData(await f.text());
+if (!confirm("現在の会話と設定を、読み込んだ内容で置き換えます。よろしいですか？（APIキーはこの端末のまま残ります）")) return;
 const keepKey = state.apiKey;
 const keepGhToken = state.ghToken;
 state = Object.assign(
@@ -2610,7 +2515,7 @@ projects: [], projectFilter: "all", spaces: [],
 ghToken: "", ghRepo: "Ginji001/hachiware-chat-data", _savedAt: 0},
 imported
 );
-state.apiKey = moveKey || keepKey;
+state.apiKey = keepKey;
 state.ghToken = keepGhToken;
 migrateConvs(state);
 unifyState(state);
@@ -2626,9 +2531,7 @@ renderThread();
 renderSidebar();
 updateKeyNotice();
 loadModels();
-$("syncMsg").textContent = moveKey
-? "読み込みました。会話・設定・APIキーを置き換えました。"
-: "読み込みました。会話と設定を置き換えました。";
+$("syncMsg").textContent = "読み込みました。会話と設定を置き換えました。";
 } catch (e) {
 $("syncMsg").textContent = "読み込めませんでした：" + (e.message || String(e));
 }
