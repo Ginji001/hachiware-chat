@@ -364,6 +364,21 @@ dialog { border: 0; border-radius: 20px; padding: 0; max-width: 480px; width: 92
       <p class="hint" id="syncMsg"></p>
       <p class="hint">🔑 の書き出しにはAPIキーが入ります。自分の端末の移動専用で、人に渡さないでください。</p>
     </div>
+    <div>
+      <label>GitHub同期トークン
+        <input id="ghTokenInput" type="password" autocomplete="off" placeholder="ghp_...">
+      </label>
+      <p class="hint"><a href="https://github.com/settings/tokens/new?scopes=repo&description=hachiware-chat" target="_blank" rel="noopener">トークンを作る（チェック済みの画面が開きます）</a>／有効期限は「No expiration」を選んでください</p>
+      <label>同期先リポジトリ
+        <input id="ghRepoInput" type="text" autocomplete="off" placeholder="Ginji001/hachiware-chat-data">
+      </label>
+      <div class="row" style="justify-content:flex-start">
+        <button id="ghSaveBtn" type="button" class="ghost">⬆ GitHubへ保存</button>
+        <button id="ghLoadBtn" type="button" class="ghost">⬇ GitHubから読み込む</button>
+      </div>
+      <p class="hint" id="ghMsg"></p>
+      <p class="hint">同期にはAPIキーも含まれます（他の端末でキーの入力は不要になります）。トークン自体は同期されません。</p>
+    </div>
     <label><input id="autoUpgradeInput" type="checkbox" checked style="width:auto"> モデルを自動で最新にする</label>
     <p class="hint">⚠️ 個人情報・秘密情報は送らない</p>
     <div class="row">
@@ -1063,13 +1078,13 @@ function startIdeaChat(card) {
 
 /* ---------- GitHub同期 ----------
    会話・スペース・設定を、非公開リポジトリ直下の hachiware-sync.json に保存する。
-   APIキー（Logfare）と GitHub トークンは同期データに含めない（端末ごとの保持）。 */
+   GitHub トークンは同期データに含めない（端末ごとの保持）。
+   APIキー（Logfare）は含める（2026-11-12 ユーザーの希望：端末ごとにキーを入れる手間をなくす）。 */
 const GH_SYNC_FILE = "hachiware-sync.json";
 function b64encodeUtf8(str) { return btoa(unescape(encodeURIComponent(str))); }
 function b64decodeUtf8(b64) { return decodeURIComponent(escape(atob(String(b64).replace(/\s/g, "")))); }
 function buildSyncPayload(st, now) {
   const copy = structuredClone(st);
-  delete copy.apiKey;
   delete copy.ghToken;
   for (const m of ["chat", "app", "image"]) {
     copy.ui[m] = (copy.ui[m] || []).map((it) =>
@@ -1156,7 +1171,7 @@ async function githubLoad() {
       ghMsg("GitHub側のほうが古いので読み込みませんでした。");
       return;
     }
-    if (!confirm("GitHubの内容（" + new Date(payload.updatedAt).toLocaleString() + " 保存）で、現在の会話と設定を置き換えます。よろしいですか？（APIキーとGitHubトークンはこの端末のまま残ります）")) {
+    if (!confirm("GitHubの内容（" + new Date(payload.updatedAt).toLocaleString() + " 保存）で、現在の会話と設定を置き換えます。よろしいですか？（GitHubトークンはこの端末のまま残ります。APIキーは同期側のものに置き換わります）")) {
       ghMsg("読み込みをやめました。");
       return;
     }
@@ -1171,7 +1186,7 @@ async function githubLoad() {
         ghToken: "", ghRepo: "Ginji001/hachiware-chat-data", _savedAt: 0 },
       payload.state
     );
-    state.apiKey = keepKey;
+    state.apiKey = (payload.state.apiKey || "").trim() || keepKey;
     state.ghToken = keepGhToken;
     state.ghRepo = keepGhRepo;
     migrateConvs(state);
@@ -1189,7 +1204,7 @@ async function githubLoad() {
     renderSidebar();
     updateKeyNotice();
     loadModels();
-    ghMsg("GitHubから読み込みました。会話と設定を置き換えました。");
+    ghMsg("GitHubから読み込みました。会話と設定を置き換えました。" + ((payload.state.apiKey || "").trim() ? "APIキーも設定しました。" : ""));
   } catch (e) {
     ghMsg("読み込めませんでした：" + (e.message || String(e)));
   }
@@ -2459,17 +2474,28 @@ window.open(URL.createObjectURL(blob), "_blank");
 /* 設定 */
 $("settingsBtn").addEventListener("click", () => {
 $("apiKeyInput").value = state.apiKey || "";
+$("ghTokenInput").value = state.ghToken || "";
+$("ghRepoInput").value = state.ghRepo || "";
 $("autoUpgradeInput").checked = state.autoUpgrade!== false;
 $("settings").showModal();
 });
 $("saveSettings").addEventListener("click", () => {
 state.apiKey = $("apiKeyInput").value.trim();
+state.ghToken = $("ghTokenInput").value.trim();
+state.ghRepo = $("ghRepoInput").value.trim() || state.ghRepo;
 state.autoUpgrade = $("autoUpgradeInput").checked;
 save();
 updateKeyNotice();
 $("settings").close();
 loadModels(); // キー保存後にモデル一覧を取り直す（解放済みの上位モデルを表示するため）
 });
+const syncGhInputs = () => {
+state.ghToken = $("ghTokenInput").value.trim();
+state.ghRepo = $("ghRepoInput").value.trim() || state.ghRepo;
+save();
+};
+$("ghSaveBtn").addEventListener("click", () => { syncGhInputs(); githubSave(); });
+$("ghLoadBtn").addEventListener("click", () => { syncGhInputs(); githubLoad(); });
 $("newSpaceBtn").addEventListener("click", () => newSpace());
 $("feedBtn").addEventListener("click", openFeed);
 $("ideasBtn").addEventListener("click", openIdeas);
