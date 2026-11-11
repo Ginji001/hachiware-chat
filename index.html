@@ -1133,14 +1133,18 @@ async function githubSave() {
     }
     if (!repoRes.ok) { ghMsg("リポジトリを確認できませんでした（" + repoRes.status + "）。トークンとリポジトリ名を確認してください。"); return; }
     const filePath = base + "/contents/" + GH_SYNC_FILE;
-    let sha = null;
-    const cur = await ghApi(filePath);
-    if (cur.ok) { const j = await cur.json(); sha = j.sha || null; }
-    else if (cur.status !== 404) { ghMsg("既存ファイルを確認できませんでした（" + cur.status + "）。"); return; }
     const payload = buildSyncPayload(state, Date.now());
-    const body = { message: "hachiware-chat sync", content: b64encodeUtf8(JSON.stringify(payload)) };
-    if (sha) body.sha = sha;
-    const put = await ghApi(filePath, { method: "PUT", body: JSON.stringify(body) });
+    let put = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      let sha = null;
+      const cur = await ghApi(filePath);
+      if (cur.ok) { const j = await cur.json(); sha = j.sha || null; }
+      else if (cur.status !== 404) { ghMsg("既存ファイルを確認できませんでした（" + cur.status + "）。"); return; }
+      const body = { message: "hachiware-chat sync", content: b64encodeUtf8(JSON.stringify(payload)) };
+      if (sha) body.sha = sha;
+      put = await ghApi(filePath, { method: "PUT", body: JSON.stringify(body) });
+      if (put.ok || put.status !== 409) break;
+    }
     if (!put.ok) {
       const t = await put.text().catch(() => "");
       ghMsg("保存できませんでした（" + put.status + "）" + (t ? "：" + t.slice(0, 120) : ""));
@@ -2494,8 +2498,8 @@ state.ghToken = $("ghTokenInput").value.trim();
 state.ghRepo = $("ghRepoInput").value.trim() || state.ghRepo;
 save();
 };
-$("ghSaveBtn").addEventListener("click", () => { syncGhInputs(); githubSave(); });
-$("ghLoadBtn").addEventListener("click", () => { syncGhInputs(); githubLoad(); });
+$("ghSaveBtn").addEventListener("click", async (e) => { const b = e.currentTarget; if (b.disabled) return; b.disabled = true; syncGhInputs(); try { await githubSave(); } finally { b.disabled = false; } });
+$("ghLoadBtn").addEventListener("click", async (e) => { const b = e.currentTarget; if (b.disabled) return; b.disabled = true; syncGhInputs(); try { await githubLoad(); } finally { b.disabled = false; } });
 $("newSpaceBtn").addEventListener("click", () => newSpace());
 $("feedBtn").addEventListener("click", openFeed);
 $("ideasBtn").addEventListener("click", openIdeas);
