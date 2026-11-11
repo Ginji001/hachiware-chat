@@ -419,19 +419,20 @@ const LS_KEY = "hachiware-chat-state-v1";
 const CAT_ICON = "icon-512.png";
 
 /* チャットで使うのは上位モデルのみ（この順で表示）。既定は先頭のGLM 5.3 */
-const TOP_CHAT_IDS = ["glm-5.3", "qwen-3.8-27b", "gemma-4-31b-it", "deepseek-v4.1-flash-1017"];
+const TOP_CHAT_IDS = ["glm-5.3", "qwen-3.8-27b", "gemma-4-31b-it", "deepseek-v4.1-flash-1017", "kimi-k3.1-pro"];
 const FALLBACK_MODELS = {
   chat: [
     { id: "glm-5.3", label: "GLM 5.3" },
     { id: "qwen-3.8-27b", label: "Qwen 3.8 27B" },
     { id: "gemma-4-31b-it", label: "Gemma 4 31B IT" },
     { id: "deepseek-v4.1-flash-1017", label: "DeepSeek V4.1 Flash" },
+    { id: "kimi-k3.1-pro", label: "Kimi K3.1 Pro" },
   ],
   image: [
     { id: "flux-2-dev", label: "FLUX.2 Dev（高画質）" },
     { id: "flux-2-klein-9b", label: "FLUX.2 Klein 9B" },
+    { id: "flux-2-klein-4b", label: "FLUX.2 Klein 4B" },
     { id: "flux-1-schnell", label: "FLUX.1 Schnell（速い）" },
-    { id: "sdxl-lightning", label: "SDXL Lightning（速い）" },
   ],
 };
 
