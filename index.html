@@ -252,7 +252,7 @@ footer { padding: 8px 16px calc(10px + env(safe-area-inset-bottom)); max-width: 
   flex: 1; resize: none; border: 0; outline: none; padding: 3px 2px; background: transparent;
   font-size: 1rem; line-height: 1.4; max-height: 140px; overflow-y: auto; min-width: 0;
 }
-#modelSelect {
+#modelSelect, #destSelect {
   border: 0; background: transparent; color: var(--muted); font-size: .82rem;
   padding: 4px 2px; border-radius: 8px; max-width: 30vw; flex: none;
   text-overflow: ellipsis; cursor: pointer; align-self: flex-end; margin-bottom: 5px;
@@ -331,6 +331,10 @@ dialog { border: 0; border-radius: 20px; padding: 0; max-width: 480px; width: 92
     <div class="composer-row">
       <button id="attachBtn" type="button" title="ファイルや画像を添付（画像・テキスト・ZIP）">📎</button>
       <textarea id="input" rows="1" placeholder="メッセージを入力"></textarea>
+      <select id="destSelect" title="行き先">
+        <option value="chat">💬 チャット</option>
+        <option value="mac">💻 Mac</option>
+      </select>
       <select id="modelSelect" title="モデル"></select>
       <button id="sendBtn" type="submit" aria-label="送信">↑</button>
     </div>
@@ -379,6 +383,17 @@ dialog { border: 0; border-radius: 20px; padding: 0; max-width: 480px; width: 92
       </div>
       <p class="hint" id="ghMsg"></p>
       <p class="hint">同期にはAPIキーも含まれます（他の端末でキーの入力は不要になります）。トークン自体は同期されません。</p>
+    </div>
+    <div>
+      <label>Mac接続（OpenCode）ペアリングリンク
+        <input id="ocPairInput" type="password" autocomplete="off" placeholder="opencode pair のリンクを貼る">
+      </label>
+      <div class="row" style="justify-content:flex-start">
+        <button id="ocConnectBtn" type="button" class="ghost">🔗 Macに接続</button>
+        <button id="ocCheckBtn" type="button" class="ghost">接続を確認</button>
+      </div>
+      <p class="hint" id="ocMsg"></p>
+      <p class="hint">MacのOpenCodeで作ったペアリングリンクを貼って「Macに接続」を押してください。接続は30日有効です。接続トークンはこの端末だけに保存され、同期・書き出しには含まれません。</p>
     </div>
     <label><input id="autoUpgradeInput" type="checkbox" checked style="width:auto"> モデルを自動で最新にする</label>
     <p class="hint">⚠️ 個人情報・秘密情報は送らない</p>
@@ -465,6 +480,8 @@ let state = {
   spaces: [],
   ghToken: "",
   ghRepo: "Ginji001/hachiware-chat-data",
+  ocToken: "",
+  destChoice: "chat",
   _savedAt: 0,
   modelChoice: { chat: "glm-5.3", image: "flux-2-dev" },
   ui: { chat: [], app: [], image: [] },
@@ -659,6 +676,8 @@ function migrateSpaces(st) {
   }
   if (typeof st.ghToken !== "string") st.ghToken = st.ghToken ? String(st.ghToken) : "";
   if (!st.ghRepo) st.ghRepo = "Ginji001/hachiware-chat-data";
+  if (typeof st.ocToken !== "string") st.ocToken = st.ocToken ? String(st.ocToken) : "";
+  if (st.destChoice !== "mac") st.destChoice = "chat";
   if (!st._savedAt) st._savedAt = 0;
   return st;
 }
@@ -1096,6 +1115,7 @@ function b64decodeUtf8(b64) { return decodeURIComponent(escape(atob(String(b64).
 function buildSyncPayload(st, now) {
   const copy = structuredClone(st);
   delete copy.ghToken;
+  delete copy.ocToken;
   for (const m of ["chat", "app", "image"]) {
     copy.ui[m] = (copy.ui[m] || []).map((it) =>
       it.imgUrl && it.imgUrl.startsWith("data:") && it.imgUrl.length > 200000
@@ -1200,17 +1220,19 @@ async function githubLoad() {
     const keepKey = state.apiKey;
     const keepGhToken = state.ghToken;
     const keepGhRepo = state.ghRepo;
+    const keepOcToken = state.ocToken;
     state = Object.assign(
       { mode: "chat", autoUpgrade: true, routeChoice: "auto",
         modelChoice: { chat: "glm-5.3", image: "flux-2-dev" },
         ui: { chat: [], app: [], image: [] }, history: { chat: [], app: [] },
         projects: [], projectFilter: "all", spaces: [],
-        ghToken: "", ghRepo: "Ginji001/hachiware-chat-data", _savedAt: 0 },
+        ghToken: "", ghRepo: "Ginji001/hachiware-chat-data", ocToken: "", destChoice: "chat", _savedAt: 0 },
       payload.state
     );
     state.apiKey = (payload.state.apiKey || "").trim() || keepKey;
     state.ghToken = keepGhToken;
     state.ghRepo = keepGhRepo;
+    state.ocToken = keepOcToken;
     migrateConvs(state);
     unifyState(state);
     migrateProjects(state);
@@ -1222,6 +1244,7 @@ async function githubLoad() {
     save();
     $("apiKeyInput").value = state.apiKey || "";
     fillModelSelect();
+    syncDestSelect();
     renderThread();
     renderSidebar();
     updateKeyNotice();
@@ -1273,6 +1296,7 @@ function buildExportData(st, withKey) {
   const copy = structuredClone(st);
   if (!withKey) delete copy.apiKey;
   delete copy.ghToken;
+  delete copy.ocToken;
   for (const m of ["chat", "app", "image"]) {
     copy.ui[m] = (copy.ui[m] || []).map((it) =>
       it.imgUrl && it.imgUrl.startsWith("data:") && it.imgUrl.length > 200000
@@ -2210,6 +2234,199 @@ async function sendImage(prompt) {
   }
 }
 
+/* ---------- Mac実行（OpenCode） ----------
+   Mac上の OpenCode バックグラウンドサービス（http://127.0.0.1:49374）の /api を使う。
+   接続はペアリングリンク（opencode pair）を1回だけ交換して得たトークンで行う。
+   トークンはこの端末だけに保存し、同期・書き出しには含めない。
+   使えるのは、このページを Mac 上のブラウザで開いたときだけ（他の端末からは届かない）。 */
+const OC_BASE = "http://127.0.0.1:49374";
+let ocLastError = "";
+
+function ocMsg(text) { const el = $("ocMsg"); if (el) el.textContent = text; }
+function ocAuth() { return "Basic " + btoa("opencode:" + String(state.ocToken || "")); }
+async function ocApi(path, opts) {
+  return fetch(OC_BASE + path, { headers: { "Content-Type": "application/json", Authorization: ocAuth() }, ...(opts || {}) });
+}
+
+/* ペアリングリンク（またはコード）を接続トークンに交換する */
+async function ocRedeemPair(raw) {
+  const s = String(raw || "").trim();
+  const m = s.match(/auth\/connect\/([A-Za-z0-9._~%-]+)/) || s.match(/^([A-Za-z0-9._~%-]{8,})$/);
+  if (!m) throw new Error("リンクの形が違います。opencode pair で出たリンクをそのまま貼ってください。");
+  const res = await fetch(OC_BASE + "/auth/connect/" + encodeURIComponent(decodeURIComponent(m[1])), { headers: { Accept: "application/json" } });
+  if (!res.ok) throw new Error("ペアリングできませんでした（" + res.status + "）。リンクは1回限り・5分以内です。新しいリンクを作ってください。");
+  let j = null;
+  try { j = await res.json(); } catch (_) { /* JSONでない場合はトークンなしとして扱う */ }
+  const d = (j && (j.data || j)) || {};
+  const token = d.token || d.sessionToken || d.session_token || d.password || d.key || "";
+  if (!token) throw new Error("接続トークンが返りませんでした。新しいリンクでもう一度試してください。");
+  return token;
+}
+
+async function ocCheck() {
+  const res = await ocApi("/api/info");
+  if (!res.ok) throw new Error("応答がありません（" + res.status + "）");
+  const j = await res.json();
+  return (j && j.version) || "";
+}
+
+/* OpenCode の最新アシスタント応答（完成形）を取る。取れなければ "" */
+async function ocFinalText(sessionId) {
+  try {
+    const res = await ocApi("/api/session/" + encodeURIComponent(sessionId) + "/message");
+    if (!res.ok) return "";
+    const j = await res.json();
+    const list = Array.isArray(j && j.data) ? j.data : [];
+    const pick = (wantType) => {
+      for (const msg of list) {
+        if (!msg || !Array.isArray(msg.content)) continue;
+        if (wantType && msg.type !== wantType) continue;
+        const text = msg.content.filter((p) => p && p.type === "text" && p.text).map((p) => p.text).join("\n");
+        if (text) return text;
+      }
+      return "";
+    };
+    return pick("assistant") || pick("") || "";
+  } catch (_) { /* 取れなければ表示済みの逐次テキストを使う */ }
+  return "";
+}
+
+/* 許可リクエストをその場で答えられるようにする */
+function ocShowPermission(div, sessionId, req) {
+  const bar = document.createElement("div");
+  bar.className = "att-wrap";
+  const label = document.createElement("span");
+  label.className = "att-chip";
+  const res = Array.isArray(req.resources) ? req.resources.join(" ") : "";
+  label.textContent = "🔐 許可が必要です：" + (req.action || "操作") + (res ? "（" + res + "）" : "");
+  bar.appendChild(label);
+  const mk = (labelText, decision) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "dl";
+    b.textContent = labelText;
+    b.addEventListener("click", async () => {
+      b.disabled = true;
+      try {
+        await ocApi("/api/session/" + encodeURIComponent(sessionId) + "/permission/" + encodeURIComponent(req.id) + "/reply", { method: "POST", body: JSON.stringify({ decision }) });
+        label.textContent = decision === "reject" ? "🚫 拒否しました" : "✅ 許可しました";
+      } catch (_) { label.textContent = "⚠️ 返答できませんでした"; }
+    });
+    return b;
+  };
+  bar.appendChild(mk("許可する", "once"));
+  bar.appendChild(mk("拒否", "reject"));
+  div.appendChild(bar);
+  thread.scrollTop = thread.scrollHeight;
+}
+
+/* SSEイベントを読み、実行の終わりまで逐次表示する */
+async function ocReadEvents(res, sessionId, item, body, div) {
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  const parts = new Map();
+  const renderParts = () => {
+    item.text = [...parts.values()].join("\n");
+    renderRich(body, item.text);
+    thread.scrollTop = thread.scrollHeight;
+  };
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) return "closed";
+    buf += decoder.decode(value, { stream: true });
+    let idx;
+    while ((idx = buf.indexOf("\n")) >= 0) {
+      const line = buf.slice(0, idx).trim();
+      buf = buf.slice(idx + 1);
+      if (!line.startsWith("data:")) continue;
+      let ev = null;
+      try { ev = JSON.parse(line.slice(5).trim()); } catch (_) { continue; }
+      if (!ev || !ev.type) continue;
+      const d = ev.data || {};
+      const sid = d.sessionID || (d.form && d.form.sessionID) || "";
+      if (sid && sid !== sessionId) continue;
+      if (ev.type === "session.text.delta" || ev.type === "session.text.ended") {
+        const key = (d.assistantMessageID || "") + ":" + (d.ordinal == null ? 0 : d.ordinal);
+        if (ev.type === "session.text.ended") parts.set(key, d.text || parts.get(key) || "");
+        else parts.set(key, (parts.get(key) || "") + (d.delta || ""));
+        renderParts();
+      } else if (ev.type === "permission.asked" && d.id) {
+        ocShowPermission(div, sessionId, d);
+      } else if (ev.type === "form.created" && d.form) {
+        parts.set("form:" + d.form.id, "（OpenCodeが質問しています：「" + (d.form.title || "質問") + "」。OpenCodeの画面で回答してください）");
+        renderParts();
+      } else if (ev.type === "session.execution.succeeded") {
+        return "ok";
+      } else if (ev.type === "session.execution.failed") {
+        ocLastError = (d.error && d.error.message) || "不明なエラー";
+        return "failed";
+      } else if (ev.type === "session.execution.interrupted") {
+        return "interrupted";
+      }
+    }
+  }
+}
+
+async function sendMac(text) {
+  const item = { who: "assistant", text: "Macで実行しています…", imgUrl: null };
+  state.ui.chat.push(item);
+  const { div, body } = drawItem(item);
+  div.classList.add("typing");
+  ocLastError = "";
+  let ctrl = null;
+  try {
+    if (!String(state.ocToken || "").trim()) throw new Error("Macに接続されていません。「⚙️ 設定」の「Mac接続」からペアリングしてください。");
+    const t = activeThread();
+    let sessionId = t && t.ocSession ? t.ocSession : null;
+    let outcome = "closed";
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (!sessionId) {
+        const cres = await ocApi("/api/session", { method: "POST", body: JSON.stringify({ title: "ハチワレ：" + String(text).slice(0, 40), agent: "build" }) });
+        if (!cres.ok) throw new Error("OpenCodeに接続できませんでした（" + cres.status + "）。OpenCodeが起動しているか確認してください。");
+        const cj = await cres.json();
+        sessionId = (cj && cj.data && cj.data.id) || null;
+        if (!sessionId) throw new Error("セッションを作れませんでした。");
+        if (t) { t.ocSession = sessionId; save(); }
+      }
+      ctrl = new AbortController();
+      const sse = await fetch(OC_BASE + "/api/event", { headers: { Authorization: ocAuth(), Accept: "text/event-stream" }, signal: ctrl.signal });
+      if (!sse.ok) throw new Error("イベント接続に失敗しました（" + sse.status + "）");
+      const pres = await ocApi("/api/session/" + encodeURIComponent(sessionId) + "/prompt", { method: "POST", body: JSON.stringify({ text }) });
+      if (pres.status === 404 && attempt === 0) { // セッションが消えていたら作り直して1回だけ再送
+        sessionId = null;
+        if (t) { t.ocSession = null; save(); }
+        try { ctrl.abort(); } catch (_) { /* noop */ }
+        continue;
+      }
+      if (!pres.ok) throw new Error("送信できませんでした（" + pres.status + "）");
+      item.text = "";
+      renderRich(body, item.text);
+      richFinal = false;
+      try { outcome = await ocReadEvents(sse, sessionId, item, body, div); } finally { richFinal = true; }
+      break;
+    }
+    const finalText = await ocFinalText(sessionId);
+    if (finalText) item.text = finalText;
+    if (outcome === "failed") {
+      item.who = "error";
+      item.text = "Mac側でエラーになりました：" + ocLastError;
+    } else if (!item.text) {
+      item.text = "（応答がありませんでした）";
+    }
+  } catch (e) {
+    item.who = "error";
+    item.text = e.message || String(e);
+  } finally {
+    if (ctrl) { try { ctrl.abort(); } catch (_) { /* noop */ } }
+    div.classList.remove("typing");
+    div.className = "msg " + (item.who === "error" ? "error" : "assistant");
+    renderRich(body, item.text);
+    attachMsgActions(div, item);
+    save();
+  }
+}
+
 /* ---------- 添付ファイル（画像・テキスト・ZIP） ---------- */
 let pendingAtts = [];
 const TEXT_EXTS = [".txt", ".md", ".csv", ".tsv", ".json", ".js", ".ts", ".jsx", ".tsx", ".html", ".htm", ".css", ".py", ".xml", ".svg", ".log", ".yaml", ".yml", ".toml"];
@@ -2409,6 +2626,17 @@ input.focus();
 return;
 }
 }
+// 行き先が「Mac」のときは、OpenCodeへ直接送る（APIキー・自動振り分けより優先）
+if ($("destSelect").value === "mac") {
+if (!text) { attNotice("Mac実行では文章を入力してください（添付だけでは送れません）"); return;}
+input.value = "";
+fitInput();
+addItem("user", text);
+if (pendingAtts.length) attNotice("Mac実行では添付ファイルは送れません（入力欄の下に残しています）");
+$("sendBtn").disabled = true;
+try { await sendMac(text);} finally { $("sendBtn").disabled = false; input.focus();}
+return;
+}
 // 行き先の振り分け（自動のみ。振り分け先へはAPIキー不要）
 const det = detectRoute(text);
 if (det.route!== "logfare") {
@@ -2470,6 +2698,15 @@ state.modelChoice.chat = modelSelect.value;
 save();
 });
 
+function syncDestSelect() {
+const el = $("destSelect");
+if (el) el.value = state.destChoice === "mac"? "mac": "chat";
+}
+$("destSelect").addEventListener("change", () => {
+state.destChoice = $("destSelect").value;
+save();
+});
+
 /* サイドバー */
 $("sideBtn").addEventListener("click", openSidebar);
 $("sideCloseBtn").addEventListener("click", closeSidebar);
@@ -2498,6 +2735,8 @@ $("settingsBtn").addEventListener("click", () => {
 $("apiKeyInput").value = state.apiKey || "";
 $("ghTokenInput").value = state.ghToken || "";
 $("ghRepoInput").value = state.ghRepo || "";
+$("ocPairInput").value = "";
+ocMsg(state.ocToken ? "接続済みです（この端末に保存されています）" : "未接続です");
 $("autoUpgradeInput").checked = state.autoUpgrade!== false;
 $("settings").showModal();
 });
@@ -2518,6 +2757,24 @@ save();
 };
 $("ghSaveBtn").addEventListener("click", async (e) => { const b = e.currentTarget; if (b.disabled) return; b.disabled = true; syncGhInputs(); try { await githubSave(); } finally { b.disabled = false; } });
 $("ghLoadBtn").addEventListener("click", async (e) => { const b = e.currentTarget; if (b.disabled) return; b.disabled = true; syncGhInputs(); try { await githubLoad(); } finally { b.disabled = false; } });
+$("ocConnectBtn").addEventListener("click", async (e) => {
+const b = e.currentTarget; if (b.disabled) return; b.disabled = true;
+ocMsg("接続しています…");
+try {
+state.ocToken = await ocRedeemPair($("ocPairInput").value);
+save();
+$("ocPairInput").value = "";
+try { const v = await ocCheck(); ocMsg("接続しました（OpenCode " + v + "）。入力欄で「💻 Mac」を選んで送ると、このMacで実行されます。"); }
+catch (_) { ocMsg("接続しました。入力欄で「💻 Mac」を選んで送ると、このMacで実行されます。"); }
+} catch (err) { ocMsg(err.message || String(err)); }
+finally { b.disabled = false; }
+});
+$("ocCheckBtn").addEventListener("click", async () => {
+if (!String(state.ocToken || "").trim()) { ocMsg("未接続です。ペアリングリンクを貼って「Macに接続」を押してください。"); return; }
+ocMsg("確認しています…");
+try { const v = await ocCheck(); ocMsg("接続OK（OpenCode " + v + "）"); }
+catch (err) { ocMsg("接続できません：" + (err.message || String(err))); }
+});
 $("newSpaceBtn").addEventListener("click", () => newSpace());
 $("feedBtn").addEventListener("click", openFeed);
 $("ideasBtn").addEventListener("click", openIdeas);
@@ -2571,16 +2828,18 @@ const imported = parseImportData(await f.text());
 if (!confirm("現在の会話と設定を、読み込んだ内容で置き換えます。よろしいですか？（ファイルにAPIキーが含まれていれば、そのキーも設定されます）")) return;
 const keepKey = state.apiKey;
 const keepGhToken = state.ghToken;
+const keepOcToken = state.ocToken;
 state = Object.assign(
 { mode: "chat", autoUpgrade: true, routeChoice: "auto",
 modelChoice: { chat: "glm-5.3", image: "flux-2-dev"},
 ui: { chat: [], app: [], image: []}, history: { chat: [], app: []},
 projects: [], projectFilter: "all", spaces: [],
-ghToken: "", ghRepo: "Ginji001/hachiware-chat-data", _savedAt: 0},
+ghToken: "", ghRepo: "Ginji001/hachiware-chat-data", ocToken: "", destChoice: "chat", _savedAt: 0},
 imported
 );
 state.apiKey = (imported.apiKey || "").trim() || keepKey;
 state.ghToken = keepGhToken;
+state.ocToken = keepOcToken;
 migrateConvs(state);
 unifyState(state);
 migrateProjects(state);
@@ -2591,6 +2850,7 @@ document.querySelector("footer").hidden = false;
 linkActiveThreads();
 save();
 fillModelSelect();
+syncDestSelect();
 renderThread();
 renderSidebar();
 updateKeyNotice();
@@ -2642,6 +2902,7 @@ migratePages(state);
 linkActiveThreads();
 updateKeyNotice();
 fillModelSelect();
+syncDestSelect();
 fitInput();
 renderThread();
 renderSidebar();
