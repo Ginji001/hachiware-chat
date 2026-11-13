@@ -319,6 +319,7 @@ dialog { border: 0; border-radius: 20px; padding: 0; max-width: 480px; width: 92
 <div id="scrim" hidden></div>
 
 <p id="keyNotice" class="notice" hidden>APIキーが未設定です。「⚙️ 設定」からキーを入れてください。</p>
+<p id="saveNotice" class="notice" hidden></p>
 <p id="autoNotice" class="notice" hidden></p>
 <p id="projBar" class="notice" hidden></p>
 
@@ -366,9 +367,9 @@ dialog { border: 0; border-radius: 20px; padding: 0; max-width: 480px; width: 92
     </div>
     <div>
       <label>GitHub同期トークン
-        <input id="ghTokenInput" type="password" autocomplete="off" placeholder="ghp_...">
+        <input id="ghTokenInput" type="password" autocomplete="off" placeholder="トークン">
       </label>
-      <p class="hint"><a href="https://github.com/settings/tokens/new?scopes=repo&description=hachiware-chat" target="_blank" rel="noopener">トークンを作る（チェック済みの画面が開きます）</a>／有効期限は「No expiration」を選んでください</p>
+      <p class="hint"><a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">トークンを作る（権限を絞れる方式の画面が開きます）</a>／Repository access は「Only select repositories」で hachiware-chat-data だけを選び、Permissions → Repository permissions → Contents を「Read and write」にしてください。有効期限は最長1年です（切れたら作り直してください）</p>
       <label>同期先リポジトリ
         <input id="ghRepoInput" type="text" autocomplete="off" placeholder="Ginji001/hachiware-chat-data">
       </label>
@@ -492,7 +493,16 @@ function save() {
       );
     }
     localStorage.setItem(LS_KEY, JSON.stringify(copy));
-  } catch (_) { /* 容量超過時は保存を諦める */ }
+    const sn = $("saveNotice");
+    if (sn) sn.hidden = true;
+  } catch (_) {
+    /* 容量超過などで保存できなかったときは、黙って捨てず画面に警告を出す */
+    const sn = $("saveNotice");
+    if (sn) {
+      sn.textContent = "⚠️ 保存できませんでした（端末の保存容量がいっぱいの可能性があります）。このまま続けると新しい会話が残りません。古い会話を消すか、「⚙️ 設定」からGitHubへ保存してください。";
+      sn.hidden = false;
+    }
+  }
 }
 
 function getKey() { return (state.apiKey || "").trim(); }
@@ -1166,7 +1176,15 @@ async function githubLoad() {
     if (res.status === 404) { ghMsg("GitHubに同期ファイルがありません。先に「GitHubへ保存」をしてください。"); return; }
     if (!res.ok) { ghMsg("読み込めませんでした（" + res.status + "）。トークンとリポジトリ名を確認してください。"); return; }
     const j = await res.json();
-    const payload = JSON.parse(b64decodeUtf8(j.content || ""));
+    let contentB64 = j.content || "";
+    if (!contentB64 && j.sha) {
+      /* 1MBを超えるファイルは Contents API が中身を返さないため、Blob API で取得する */
+      const bres = await ghApi("/repos/" + parts.owner + "/" + parts.repo + "/git/blobs/" + j.sha);
+      if (!bres.ok) { ghMsg("読み込めませんでした（" + bres.status + "）。"); return; }
+      const bj = await bres.json();
+      contentB64 = bj.content || "";
+    }
+    const payload = JSON.parse(b64decodeUtf8(contentB64));
     if (!payload || payload.app !== "hachiware-chat" || !payload.state || !payload.state.ui || !payload.state.history) {
       ghMsg("同期ファイルの形式が違います。読み込みませんでした。");
       return;
