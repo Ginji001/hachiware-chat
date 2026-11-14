@@ -2354,7 +2354,7 @@ async function ocReadEvents(res, sessionId, item, body, div) {
       } else if (ev.type === "permission.asked" && d.id) {
         ocShowPermission(div, sessionId, d);
       } else if (ev.type === "form.created" && d.form) {
-        parts.set("form:" + d.form.id, "（OpenCodeが質問しています：「" + (d.form.title || "質問") + "」。OpenCodeの画面で回答してください）");
+        parts.set("form:" + d.form.id, "（質問が出ました：「" + (d.form.title || "質問") + "」。Mac実行は質問で止まらない仕様ですが、この回だけOpenCodeの画面で回答してください）");
         renderParts();
       } else if (ev.type === "session.execution.succeeded") {
         return "ok";
@@ -2392,7 +2392,8 @@ async function sendMac(text) {
       ctrl = new AbortController();
       const sse = await fetch(OC_BASE + "/api/event", { headers: { Authorization: ocAuth(), Accept: "text/event-stream" }, signal: ctrl.signal });
       if (!sse.ok) throw new Error("イベント接続に失敗しました（" + sse.status + "）");
-      const pres = await ocApi("/api/session/" + encodeURIComponent(sessionId) + "/prompt", { method: "POST", body: JSON.stringify({ text }) });
+      const ocText = "【進め方（必須）】作業中に不明点があっても、質問ツール（Questions）で確認を求めたり、途中で止まったりしないでください。最も妥当な推定で最後まで進め、選んだ前提は応答の冒頭に「前提：…」と明記してください。\n\n" + text;
+      const pres = await ocApi("/api/session/" + encodeURIComponent(sessionId) + "/prompt", { method: "POST", body: JSON.stringify({ text: ocText }) });
       if (pres.status === 404 && attempt === 0) { // セッションが消えていたら作り直して1回だけ再送
         sessionId = null;
         if (t) { t.ocSession = null; save(); }
