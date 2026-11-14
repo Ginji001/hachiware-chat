@@ -2903,7 +2903,12 @@ $("projectDlg").close();
 });
 
 /* ---------- 起動 ---------- */
-/* 画面全体はCSSで固定（body: position fixed, inset 0）。スクロールは会話欄だけ */
+/* 画面全体はCSSで固定（body: position fixed, inset 0）。スクロールは会話欄だけ。
+   iOSはスクロール欄の端で画面全体が引っ張られることがあるため、欄の外のドラッグは止める */
+document.addEventListener("touchmove", (e) => {
+  if (!e.target.closest("#thread, #convList, dialog, .md-table, textarea")) e.preventDefault();
+}, { passive: false });
+window.addEventListener("scroll", () => { if (window.scrollY) window.scrollTo(0, 0); }, { passive: true });
 migrateConvs(state);
 unifyState(state);
 migrateProjects(state);
