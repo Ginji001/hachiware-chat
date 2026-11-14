@@ -261,6 +261,13 @@ footer { padding: 8px 16px calc(10px + env(safe-area-inset-bottom)); max-width: 
   width: 34px; height: 34px; border-radius: 50%; padding: 0; font-size: 1rem; flex: none;
   display: grid; place-items: center; margin-bottom: 1px;
 }
+/* 狭い画面では入力欄を1段目に横いっぱいに広げ、操作類は2段目に置く（1行に詰めると入力欄が潰れるため） */
+@media (max-width: 700px) {
+  .composer-row { flex-wrap: wrap; row-gap: 2px; }
+  #composer textarea { order: -1; flex: 1 1 100%; padding: 6px 4px 2px; }
+  #modelSelect, #destSelect { min-width: 0; }
+  #sendBtn { margin-left: auto; }
+}
 
 /* ===== 簡易ブラウザ（プレビュー） ===== */
 #pvOverlay { position: fixed; inset: 0; z-index: 60; background: var(--bg); display: flex; flex-direction: column; }
