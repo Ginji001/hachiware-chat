@@ -55,7 +55,7 @@
 * { box-sizing: border-box; }
 html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
 body {
-  position: fixed; top: 0; left: 0; right: 0; height: 100dvh;
+  position: fixed; inset: 0;
   margin: 0; display: flex; flex-direction: column;
   font-family: "Hiragino Sans", "Noto Sans JP", -apple-system, sans-serif;
   background: var(--bg); color: var(--text);
@@ -2903,18 +2903,7 @@ $("projectDlg").close();
 });
 
 /* ---------- 起動 ---------- */
-/* 画面全体は固定し、見えている範囲（キーボード開閉を含む）に高さを合わせる。スクロールは会話欄だけ */
-function fitShell() {
-  const vv = window.visualViewport;
-  if (!vv) return;
-  document.body.style.height = vv.height + "px";
-  document.body.style.transform = vv.offsetTop ? "translateY(" + vv.offsetTop + "px)" : "";
-}
-if (window.visualViewport) {
-  visualViewport.addEventListener("resize", fitShell);
-  visualViewport.addEventListener("scroll", fitShell);
-  fitShell();
-}
+/* 画面全体はCSSで固定（body: position fixed, inset 0）。スクロールは会話欄だけ */
 migrateConvs(state);
 unifyState(state);
 migrateProjects(state);
