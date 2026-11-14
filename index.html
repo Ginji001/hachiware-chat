@@ -53,8 +53,9 @@
   }
 }
 * { box-sizing: border-box; }
-html, body { height: 100%; }
+html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
 body {
+  position: fixed; top: 0; left: 0; right: 0; height: 100dvh;
   margin: 0; display: flex; flex-direction: column;
   font-family: "Hiragino Sans", "Noto Sans JP", -apple-system, sans-serif;
   background: var(--bg); color: var(--text);
@@ -147,7 +148,7 @@ header .left { display: flex; align-items: center; gap: 4px; }
 }
 
 /* ===== 会話 ===== */
-main#thread { flex: 1; overflow-y: auto; width: 100%; }
+main#thread { flex: 1; overflow-y: auto; width: 100%; min-height: 0; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
 #col {
   display: flex; flex-direction: column; gap: 18px;
   max-width: 800px; width: 100%; margin: 0 auto; padding: 18px 16px 20px;
@@ -2902,6 +2903,18 @@ $("projectDlg").close();
 });
 
 /* ---------- 起動 ---------- */
+/* 画面全体は固定し、見えている範囲（キーボード開閉を含む）に高さを合わせる。スクロールは会話欄だけ */
+function fitShell() {
+  const vv = window.visualViewport;
+  if (!vv) return;
+  document.body.style.height = vv.height + "px";
+  document.body.style.transform = vv.offsetTop ? "translateY(" + vv.offsetTop + "px)" : "";
+}
+if (window.visualViewport) {
+  visualViewport.addEventListener("resize", fitShell);
+  visualViewport.addEventListener("scroll", fitShell);
+  fitShell();
+}
 migrateConvs(state);
 unifyState(state);
 migrateProjects(state);
