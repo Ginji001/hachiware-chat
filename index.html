@@ -249,6 +249,11 @@ footer { padding: 8px 16px calc(10px + env(safe-area-inset-bottom)); max-width: 
   font-size: 1.05rem; width: 34px; height: 34px; padding: 0; border: 0; border-radius: 50%;
   background: transparent; color: var(--muted); display: grid; place-items: center; flex: none; margin-bottom: 1px;
 }
+#readBtn {
+  font-size: 1.05rem; width: 34px; height: 34px; padding: 0; border: 0; border-radius: 50%;
+  background: transparent; color: var(--muted); display: grid; place-items: center; flex: none; margin-bottom: 1px;
+}
+#readBtn.on { background: var(--active); color: var(--text); }
 #composer textarea {
   flex: 1; resize: none; border: 0; outline: none; padding: 3px 2px; background: transparent;
   font-size: 1rem; line-height: 1.4; max-height: 140px; overflow-y: auto; min-width: 0;
@@ -338,6 +343,7 @@ dialog { border: 0; border-radius: 20px; padding: 0; max-width: 480px; width: 92
     <div id="attBar" hidden></div>
     <div class="composer-row">
       <button id="attachBtn" type="button" title="ファイルや画像を添付（画像・テキスト・ZIP）">📎</button>
+      <button id="readBtn" type="button" title="ページ読み取り：オンにして送ると、文中のURLの本文を取得して材料として一緒に送ります（最初の1件のみ）">🌐</button>
       <textarea id="input" rows="1" placeholder="メッセージを入力"></textarea>
       <select id="destSelect" title="行き先">
         <option value="chat">💬 チャット</option>
@@ -2438,6 +2444,56 @@ async function sendMac(text) {
 
 /* ---------- 添付ファイル（画像・テキスト・ZIP） ---------- */
 let pendingAtts = [];
+let readMode = false;
+
+/* ---------- ページ読み取り（URLの本文を取得して材料にする） ----------
+   ブラウザから相手サイトを直接 fetch すると CORS で止められるため、
+   読み取り専用の中継（Jina Reader）経由で本文テキストを取得する。
+   取得は文中の最初の1件だけ。サイト内を自動で巡回はしない。
+   中継側がボット確認で止められたページは取得できない（回避はしない）。 */
+function extractFirstUrl(text) {
+  const m = String(text || "").match(/https?:\/\/[^\s<>"'「」『』]+/);
+  if (!m) return null;
+  return m[0].replace(/[。、）)】>]+$/, "");
+}
+async function fetchViaJina(url) {
+  const res = await fetch("https://r.jina.ai/" + url);
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  const t = await res.text();
+  if (/Just a moment|Verifying Your Connection|Attention Required/i.test(t.slice(0, 600))) {
+    throw new Error("相手サイトのボット確認で止められました");
+  }
+  return t;
+}
+async function fetchViaAllOrigins(url) {
+  const res = await fetch("https://api.allorigins.win/raw?url=" + encodeURIComponent(url));
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  const html = await res.text();
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  doc.querySelectorAll("script, style, noscript").forEach((el) => el.remove());
+  const t = (doc.body && (doc.body.innerText || doc.body.textContent)) || "";
+  if (!t.trim()) throw new Error("本文を取り出せませんでした");
+  return t;
+}
+async function fetchPageText(url) {
+  let t;
+  let firstErr = null;
+  try {
+    t = await fetchViaJina(url);
+  } catch (e) {
+    firstErr = e;
+  }
+  if (t === undefined) {
+    try {
+      t = await fetchViaAllOrigins(url); // 中継1が止められた場合は中継2（生HTML方式）を試す
+    } catch (_) {
+      throw firstErr || new Error("取得に失敗しました"); // 両方ダメなら中継1側の理由（ボット確認など）を出す
+    }
+  }
+  const CAP = 20000;
+  if (t.length > CAP) return { text: t.slice(0, CAP), truncated: true };
+  return { text: t, truncated: false };
+}
 const TEXT_EXTS = [".txt", ".md", ".csv", ".tsv", ".json", ".js", ".ts", ".jsx", ".tsx", ".html", ".htm", ".css", ".py", ".xml", ".svg", ".log", ".yaml", ".yml", ".toml"];
 const MAX_ATTS = 4;
 const MAX_TEXT = 100000;
@@ -2672,7 +2728,27 @@ addItem("user", text, null, built? { attachImg: built.attachImg, fileNames: buil
 $("sendBtn").disabled = true;
 try {
 if (wantImage) await sendImage(text);
-else await sendChat(text, atts);
+else {
+  let prebuilt;
+  if (readMode) {
+    const pageUrl = extractFirstUrl(text);
+    if (!pageUrl) {
+      attNotice("ページ読み取りがオンですが、文中にURLがありませんでした（本文なしで送ります）");
+    } else {
+      attNotice("🌐 ページを取得しています… " + pageUrl);
+      try {
+        const page = await fetchPageText(pageUrl);
+        const block = "【取得したページ本文】\n出典URL: " + pageUrl + "\n" + page.text + "\n【ページ本文ここまで】\n上の本文はウェブページから取得した参考材料です。質問にはこの本文に基づいて答えてください。" + (page.truncated ? "\n（本文が長いため先頭20000文字で切っています）" : "");
+        const combined = text + "\n\n" + block;
+        prebuilt = atts.length ? buildUserContent(combined, atts).content : combined;
+        addItem("assistant", "🌐 ページ本文を取得しました：" + pageUrl + "（約" + page.text.length + "文字" + (page.truncated ? "、先頭のみ" : "") + "）。この本文を材料として送りました。");
+      } catch (err) {
+        addItem("assistant", "🌐 ページを取得できませんでした：" + pageUrl + "（" + (err.message || err) + "）。本文なしで送信します。");
+      }
+    }
+  }
+  await sendChat(text, atts, prebuilt);
+}
 } finally {
 $("sendBtn").disabled = false;
 input.focus();
@@ -2697,6 +2773,11 @@ if (files.length) { e.preventDefault(); addFiles(files);}
 });
 
 $("attachBtn").addEventListener("click", () => $("fileInput").click());
+$("readBtn").addEventListener("click", () => {
+  readMode = !readMode;
+  $("readBtn").classList.toggle("on", readMode);
+  attNotice(readMode ? "ページ読み取り：オン（💬チャットで送るとき、文中のURLの本文を取得して材料にします）" : "ページ読み取り：オフ");
+});
 $("fileInput").addEventListener("change", async (e) => {
 await addFiles([...e.target.files]);
 e.target.value = "";
