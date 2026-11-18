@@ -249,13 +249,6 @@ footer { padding: 8px 16px calc(10px + env(safe-area-inset-bottom)); max-width: 
   font-size: 1.05rem; width: 34px; height: 34px; padding: 0; border: 0; border-radius: 50%;
   background: transparent; color: var(--muted); display: grid; place-items: center; flex: none; margin-bottom: 1px;
 }
-#readBtn {
-  font-size: 1.05rem; width: 34px; height: 34px; padding: 0; border: 0; border-radius: 50%;
-  background: transparent; color: var(--muted); display: grid; place-items: center; flex: none; margin-bottom: 1px;
-}
-#readBtn.on { background: var(--active); color: var(--text); }
-#readBtn { position: relative; }
-#readBtn.auto::after { content: "A"; position: absolute; right: -1px; bottom: -1px; font-size: .52rem; line-height: 1; padding: 2px 3px; border-radius: 999px; background: var(--active); color: var(--text); }
 #composer textarea {
   flex: 1; resize: none; border: 0; outline: none; padding: 3px 2px; background: transparent;
   font-size: 1rem; line-height: 1.4; max-height: 140px; overflow-y: auto; min-width: 0;
@@ -345,7 +338,6 @@ dialog { border: 0; border-radius: 20px; padding: 0; max-width: 480px; width: 92
     <div id="attBar" hidden></div>
     <div class="composer-row">
       <button id="attachBtn" type="button" title="ファイルや画像を添付（画像・テキスト・ZIP）">📎</button>
-      <button id="readBtn" class="auto" type="button" title="ページ読み取りは自動です。URLだけのときは本文を読み取り、材料が文中にあれば読み取りません（切り替えはありません）">🌐</button>
       <textarea id="input" rows="1" placeholder="メッセージを入力"></textarea>
       <select id="destSelect" title="行き先">
         <option value="chat">💬 チャット</option>
@@ -2806,9 +2798,6 @@ if (files.length) { e.preventDefault(); addFiles(files);}
 });
 
 $("attachBtn").addEventListener("click", () => $("fileInput").click());
-$("readBtn").addEventListener("click", () => {
-  attNotice("ページ読み取りは自動です（切り替えはありません）。URLだけのときは本文を読み取り、材料が文中にあれば読み取りません。自動で取れないサイトは本文を貼って送ってください");
-});
 $("fileInput").addEventListener("change", async (e) => {
 await addFiles([...e.target.files]);
 e.target.value = "";
