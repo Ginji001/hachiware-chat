@@ -345,7 +345,7 @@ dialog { border: 0; border-radius: 20px; padding: 0; max-width: 480px; width: 92
     <div id="attBar" hidden></div>
     <div class="composer-row">
       <button id="attachBtn" type="button" title="ファイルや画像を添付（画像・テキスト・ZIP）">📎</button>
-      <button id="readBtn" type="button" title="ページ読み取り：自動（A印）が既定です。URLだけのときは本文を読み取り、材料が文中にあれば読み取りません。押すたびに 自動→オン→オフ と切り替わります">🌐</button>
+      <button id="readBtn" class="auto" type="button" title="ページ読み取りは自動です。URLだけのときは本文を読み取り、材料が文中にあれば読み取りません（切り替えはありません）">🌐</button>
       <textarea id="input" rows="1" placeholder="メッセージを入力"></textarea>
       <select id="destSelect" title="行き先">
         <option value="chat">💬 チャット</option>
@@ -2461,7 +2461,6 @@ async function sendMac(text) {
 
 /* ---------- 添付ファイル（画像・テキスト・ZIP） ---------- */
 let pendingAtts = [];
-let readMode = "auto";
 
 /* ---------- ページ読み取り（URLの本文を取得して材料にする） ----------
    ブラウザから相手サイトを直接 fetch すると CORS で止められるため、
@@ -2764,17 +2763,11 @@ try {
 if (wantImage) await sendImage(text);
 else {
   let prebuilt;
-  let doRead = readMode === "on";
-  if (readMode === "auto") {
-    const d = decideAutoRead(text);
-    doRead = d.read;
-    attNotice("🌐 自動判定：" + d.reason);
-  }
-  if (doRead) {
+  const autoRead = decideAutoRead(text);
+  if (extractFirstUrl(text)) attNotice("🌐 自動判定：" + autoRead.reason);
+  if (autoRead.read) {
     const pageUrl = extractFirstUrl(text);
-    if (!pageUrl) {
-      attNotice("ページ読み取りがオンですが、文中にURLがありませんでした（本文なしで送ります）");
-    } else {
+    {
       attNotice("🌐 ページを取得しています… " + pageUrl);
       try {
         const page = await fetchPageText(pageUrl);
@@ -2813,16 +2806,8 @@ if (files.length) { e.preventDefault(); addFiles(files);}
 });
 
 $("attachBtn").addEventListener("click", () => $("fileInput").click());
-function renderReadBtn() {
-  const b = $("readBtn");
-  b.classList.toggle("on", readMode === "on");
-  b.classList.toggle("auto", readMode === "auto");
-}
-renderReadBtn();
 $("readBtn").addEventListener("click", () => {
-  readMode = readMode === "auto" ? "on" : readMode === "on" ? "off" : "auto";
-  renderReadBtn();
-  attNotice(readMode === "auto" ? "ページ読み取り：自動（URLだけのときは読み取り、材料が文中にあれば読み取りません）" : readMode === "on" ? "ページ読み取り：オン（💬チャットで送るとき、文中のURLの本文を取得して材料にします）" : "ページ読み取り：オフ");
+  attNotice("ページ読み取りは自動です（切り替えはありません）。URLだけのときは本文を読み取り、材料が文中にあれば読み取りません。自動で取れないサイトは本文を貼って送ってください");
 });
 $("fileInput").addEventListener("change", async (e) => {
 await addFiles([...e.target.files]);
