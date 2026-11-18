@@ -254,6 +254,8 @@ footer { padding: 8px 16px calc(10px + env(safe-area-inset-bottom)); max-width: 
   background: transparent; color: var(--muted); display: grid; place-items: center; flex: none; margin-bottom: 1px;
 }
 #readBtn.on { background: var(--active); color: var(--text); }
+#readBtn { position: relative; }
+#readBtn.auto::after { content: "A"; position: absolute; right: -1px; bottom: -1px; font-size: .52rem; line-height: 1; padding: 2px 3px; border-radius: 999px; background: var(--active); color: var(--text); }
 #composer textarea {
   flex: 1; resize: none; border: 0; outline: none; padding: 3px 2px; background: transparent;
   font-size: 1rem; line-height: 1.4; max-height: 140px; overflow-y: auto; min-width: 0;
@@ -343,7 +345,7 @@ dialog { border: 0; border-radius: 20px; padding: 0; max-width: 480px; width: 92
     <div id="attBar" hidden></div>
     <div class="composer-row">
       <button id="attachBtn" type="button" title="ファイルや画像を添付（画像・テキスト・ZIP）">📎</button>
-      <button id="readBtn" type="button" title="ページ読み取り：オンにして送ると、文中のURLの本文を取得して材料として一緒に送ります（最初の1件のみ）">🌐</button>
+      <button id="readBtn" type="button" title="ページ読み取り：自動（A印）が既定です。URLだけのときは本文を読み取り、材料が文中にあれば読み取りません。押すたびに 自動→オン→オフ と切り替わります">🌐</button>
       <textarea id="input" rows="1" placeholder="メッセージを入力"></textarea>
       <select id="destSelect" title="行き先">
         <option value="chat">💬 チャット</option>
@@ -2459,7 +2461,7 @@ async function sendMac(text) {
 
 /* ---------- 添付ファイル（画像・テキスト・ZIP） ---------- */
 let pendingAtts = [];
-let readMode = false;
+let readMode = "auto";
 
 /* ---------- ページ読み取り（URLの本文を取得して材料にする） ----------
    ブラウザから相手サイトを直接 fetch すると CORS で止められるため、
@@ -2470,6 +2472,23 @@ function extractFirstUrl(text) {
   const m = String(text || "").match(/https?:\/\/[^\s<>"'「」『』]+/);
   if (!m) return null;
   return m[0].replace(/[。、）)】>]+$/, "");
+}
+/* 自動判定：URLだけの短い文なら読み取り、材料が文中にあれば読み取らない。
+   自動で本文を取れないサイト（ボット確認やアコーディオン内のみ掲載）は対象外にする。 */
+function decideAutoRead(text) {
+  const url = extractFirstUrl(text);
+  if (!url) return { read: false, reason: "文中にURLがないため、読み取りしません" };
+  let host = "";
+  try { host = new URL(url).hostname; } catch (_) {}
+  if (/oliveyoung\./i.test(host) || (host.endsWith("kao-kirei.com") && url.includes("/ja/item/"))) {
+    return { read: false, reason: "このサイトは自動で本文を取れないため、読み取りしません（本文を貼って送ってください）" };
+  }
+  const body = text.replace(url, "");
+  const commas = (body.match(/、/g) || []).length;
+  if (body.includes("===") || /(^|\n)\s*(成分|有効成分)\s*[:：]/.test(body) || commas >= 15 || body.length >= 1500) {
+    return { read: false, reason: "材料が文中に含まれているため、読み取りしません" };
+  }
+  return { read: true, reason: "URLの本文を読み取ります" };
 }
 async function fetchViaJina(url) {
   const res = await fetch("https://r.jina.ai/" + url);
@@ -2745,7 +2764,13 @@ try {
 if (wantImage) await sendImage(text);
 else {
   let prebuilt;
-  if (readMode) {
+  let doRead = readMode === "on";
+  if (readMode === "auto") {
+    const d = decideAutoRead(text);
+    doRead = d.read;
+    attNotice("🌐 自動判定：" + d.reason);
+  }
+  if (doRead) {
     const pageUrl = extractFirstUrl(text);
     if (!pageUrl) {
       attNotice("ページ読み取りがオンですが、文中にURLがありませんでした（本文なしで送ります）");
@@ -2788,10 +2813,16 @@ if (files.length) { e.preventDefault(); addFiles(files);}
 });
 
 $("attachBtn").addEventListener("click", () => $("fileInput").click());
+function renderReadBtn() {
+  const b = $("readBtn");
+  b.classList.toggle("on", readMode === "on");
+  b.classList.toggle("auto", readMode === "auto");
+}
+renderReadBtn();
 $("readBtn").addEventListener("click", () => {
-  readMode = !readMode;
-  $("readBtn").classList.toggle("on", readMode);
-  attNotice(readMode ? "ページ読み取り：オン（💬チャットで送るとき、文中のURLの本文を取得して材料にします）" : "ページ読み取り：オフ");
+  readMode = readMode === "auto" ? "on" : readMode === "on" ? "off" : "auto";
+  renderReadBtn();
+  attNotice(readMode === "auto" ? "ページ読み取り：自動（URLだけのときは読み取り、材料が文中にあれば読み取りません）" : readMode === "on" ? "ページ読み取り：オン（💬チャットで送るとき、文中のURLの本文を取得して材料にします）" : "ページ読み取り：オフ");
 });
 $("fileInput").addEventListener("change", async (e) => {
 await addFiles([...e.target.files]);
