@@ -443,15 +443,15 @@ const API = "https://logfare.ai/v1";
 const LS_KEY = "hachiware-chat-state-v1";
 const CAT_ICON = "icon-512.png";
 
-/* チャットで使うのは上位モデルのみ（この順で表示）。既定は先頭のQwen 3.8 27B */
-const TOP_CHAT_IDS = ["qwen-3.8-27b", "glm-5.3", "gemma-4-31b-it", "deepseek-v4.1-flash-1017", "stealth/autistic-parrot"];
+/* チャットで使うのは上位モデルのみ（この順で表示）。既定は先頭のGemma 4 26B。末尾のglm-5.3は復帰監視用（一覧に戻れば自動で再表示される） */
+const TOP_CHAT_IDS = ["gemma-4-26b", "qwen-3.8-27b", "stealth/psychotic-killer", "stealth/autistic-parrot", "ernie-5.5-flash-preview", "glm-5.3"];
 const FALLBACK_MODELS = {
   chat: [
+    { id: "gemma-4-26b", label: "Gemma 4 26B" },
     { id: "qwen-3.8-27b", label: "Qwen 3.8 27B" },
-    { id: "glm-5.3", label: "GLM 5.3" },
-    { id: "gemma-4-31b-it", label: "Gemma 4 31B IT" },
-    { id: "deepseek-v4.1-flash-1017", label: "DeepSeek V4.1 Flash" },
+    { id: "stealth/psychotic-killer", label: "Psychotic Killer (Stealth)" },
     { id: "stealth/autistic-parrot", label: "Autistic Parrot (Stealth)" },
+    { id: "ernie-5.5-flash-preview", label: "ERNIE-5.5-Flash-Preview" },
   ],
   image: [
     { id: "flux-2-dev", label: "FLUX.2 Dev（高画質）" },
@@ -492,7 +492,7 @@ let state = {
   ocToken: "",
   destChoice: "chat",
   _savedAt: 0,
-  modelChoice: { chat: "qwen-3.8-27b", image: "flux-2-dev" },
+  modelChoice: { chat: "gemma-4-26b", image: "flux-2-dev" },
   ui: { chat: [], app: [], image: [] },
   history: { chat: [], app: [] },
 };
@@ -582,7 +582,7 @@ function unifyState(st) {
   if (st.history) st.history.app = [];
   st.mode = "chat";
   if (!st.modelChoice) st.modelChoice = {};
-  if (!TOP_CHAT_IDS.includes(st.modelChoice.chat)) st.modelChoice.chat = "qwen-3.8-27b";
+  if (!TOP_CHAT_IDS.includes(st.modelChoice.chat)) st.modelChoice.chat = "gemma-4-26b";
   if (!st.modelChoice.image) st.modelChoice.image = "flux-2-dev";
   st.unified = true;
   return st;
@@ -1232,7 +1232,7 @@ async function githubLoad() {
     const keepOcToken = state.ocToken;
     state = Object.assign(
       { mode: "chat", autoUpgrade: true, routeChoice: "auto",
-        modelChoice: { chat: "qwen-3.8-27b", image: "flux-2-dev" },
+        modelChoice: { chat: "gemma-4-26b", image: "flux-2-dev" },
         ui: { chat: [], app: [], image: [] }, history: { chat: [], app: [] },
         projects: [], projectFilter: "all", spaces: [],
         ghToken: "", ghRepo: "Ginji001/hachiware-chat-data", ocToken: "", destChoice: "chat", _savedAt: 0 },
@@ -1973,7 +1973,7 @@ function autoUpgradeModels() {
       state.modelChoice[modeKey] = newer.id;
     }
   };
-  apply("chat", models.chat, "qwen-3.8-27b");
+  apply("chat", models.chat, "gemma-4-26b");
   apply("image", models.image, "flux-2-dev");
   if (notices.length) {
     const el = $("autoNotice");
@@ -2941,7 +2941,7 @@ const keepGhToken = state.ghToken;
 const keepOcToken = state.ocToken;
 state = Object.assign(
 { mode: "chat", autoUpgrade: true, routeChoice: "auto",
-modelChoice: { chat: "qwen-3.8-27b", image: "flux-2-dev"},
+modelChoice: { chat: "gemma-4-26b", image: "flux-2-dev"},
 ui: { chat: [], app: [], image: []}, history: { chat: [], app: []},
 projects: [], projectFilter: "all", spaces: [],
 ghToken: "", ghRepo: "Ginji001/hachiware-chat-data", ocToken: "", destChoice: "chat", _savedAt: 0},
