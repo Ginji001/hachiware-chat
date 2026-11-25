@@ -2080,21 +2080,27 @@ function doHandoff(route, kind, reason, originalText) {
 }
 
 /* ---------- API呼び出し ---------- */
-/* 429（レート制限）のときは、少し待って自動で送り直す共通処理。
-   Retry-After があればそれに従い（最大60秒）、なければ 5→15→30 秒と間隔を広げる。最大3回まで再送する。 */
+/* 429（レート制限）のときは、待って自動で送り直す共通処理。
+   Retry-After があればそれに従い（最大120秒）、なければ 10→20→40→60 秒と間隔を広げる。最大4回まで再送する。 */
 async function fetchWithRetry(url, options, onWait) {
-  const waits = [5, 15, 30];
+  const waits = [10, 20, 40, 60];
   for (let attempt = 0; ; attempt++) {
     const res = await fetch(url, options);
     if (res.status !== 429 || attempt >= waits.length) return res;
     const ra = Number(res.headers.get("retry-after"));
-    const sec = Number.isFinite(ra) && ra > 0 ? Math.min(ra, 60) : waits[attempt];
+    const sec = Number.isFinite(ra) && ra > 0 ? Math.min(ra, 120) : waits[attempt];
     if (onWait) onWait(sec, attempt + 1);
     await new Promise((r) => setTimeout(r, sec * 1000));
   }
 }
 
 function apiErrorMessage(status, serverMsg) {
+  if (status === 429) {
+    return (
+      "混み合っています（レート制限）。自動で数回送り直しましたが、まだ制限中でした。少し時間を置くか、別のモデルで試してください。\nLogfare側の表示: " +
+      (serverMsg || "")
+    );
+  }
   if (status === 401) {
     return (
       "APIキーが違うか、LogfareのDiscord連携が未完了のようです。「⚙️ 設定」でキーを確認してください。\nLogfare側の表示: " +
