@@ -858,7 +858,7 @@ function setNav() {
 
 /* フィード／アイディア生成用の、ストリーミングしないモデル呼び出し */
 async function callModelText(systemText, userText) {
-  const res = await fetch(API + "/chat/completions", {
+  const res = await fetchWithRetry(API + "/chat/completions", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: "Bearer " + getKey() },
     body: JSON.stringify({
@@ -2080,6 +2080,20 @@ function doHandoff(route, kind, reason, originalText) {
 }
 
 /* ---------- API呼び出し ---------- */
+/* 429（レート制限）のときは、少し待って自動で送り直す共通処理。
+   Retry-After があればそれに従い（最大60秒）、なければ 5→15→30 秒と間隔を広げる。最大3回まで再送する。 */
+async function fetchWithRetry(url, options, onWait) {
+  const waits = [5, 15, 30];
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(url, options);
+    if (res.status !== 429 || attempt >= waits.length) return res;
+    const ra = Number(res.headers.get("retry-after"));
+    const sec = Number.isFinite(ra) && ra > 0 ? Math.min(ra, 60) : waits[attempt];
+    if (onWait) onWait(sec, attempt + 1);
+    await new Promise((r) => setTimeout(r, sec * 1000));
+  }
+}
+
 function apiErrorMessage(status, serverMsg) {
   if (status === 401) {
     return (
@@ -2117,11 +2131,12 @@ async function sendChat(text, atts, prebuilt) {
   /* 1回分のリクエスト。表示は item/body へ逐次反映し、最終テキストを返す（空なら ""） */
   const fetchReply = async () => {
     item.text = "";
-    const res = await fetch(API + "/chat/completions", {
+    const res = await fetchWithRetry(API + "/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: "Bearer " + getKey() },
       body: JSON.stringify({ model: state.modelChoice.chat, messages, stream: true }),
-    });
+    }, () => { phase = "混み合っているため再送待ち"; showStatus(); });
+    if (phase === "混み合っているため再送待ち") phase = "送信中";
     if (!res.ok) throw new Error(apiErrorMessage(res.status, await readError(res)));
     const ct = res.headers.get("content-type") || "";
     if (ct.includes("application/json")) {
@@ -2213,16 +2228,18 @@ async function sendImage(prompt) {
   const { div, body } = drawItem(item);
   div.classList.add("typing");
   const imgStartedAt = Date.now();
+  let imgNote = "";
   const imgTimer = setInterval(() => {
     const sec = Math.floor((Date.now() - imgStartedAt) / 1000);
-    body.textContent = "生成中です…（" + sec + "秒経過。30秒ほどかかることがあります）";
+    body.textContent = "生成中です…（" + sec + "秒経過。30秒ほどかかることがあります）" + (imgNote ? " " + imgNote : "");
   }, 1000);
   try {
-    const res = await fetch(API + "/images/generations", {
+    const res = await fetchWithRetry(API + "/images/generations", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: "Bearer " + getKey() },
       body: JSON.stringify({ model: state.modelChoice.image, prompt, size: sizeFromText(prompt), n: 1 }),
-    });
+    }, () => { imgNote = "混み合っているため、自動で再送します"; });
+    imgNote = "";
     if (!res.ok) throw new Error(apiErrorMessage(res.status, await readError(res)));
     const j = await res.json();
     const d = j?.data?.[0] || {};
